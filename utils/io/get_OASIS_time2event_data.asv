@@ -1,0 +1,32 @@
+function data_bl = get_OASIS_time2event_data()
+%GET_ADNI_TIME2EVENT_DATA Summary of this function goes here
+%   Detailed explanation goes here
+save_file = 'input/OASIS3/OASIS3_time2event.csv';
+if 1
+    clinical_path = ['input/OASIS3/OASIS3_UDSb4_cdr.csv'];
+    mmse = readtable(clinical_path,'VariableNamingRule','preserve');
+
+    mmse = mmse(:,["OASISID","days_to_visit","CDRTOT"]);
+    rid = cellfun(@(x) str2num(x(5:end)), mmse.OASISID, 'UniformOutput', 1);
+    mmse.OASISID = rid;
+    mmse.days_to_visit = mmse.days_to_visit / 365;
+    mmse = renamevars(mmse, 'OASISID', 'RID');
+    mmse = renamevars(mmse, 'days_to_visit', 'years');
+
+    mmse{mmse.CDRTOT>1, 'CDRTOT'} = 1;
+
+    mmse = renamevars(mmse, 'CDRTOT', 'diagnosis');
+    
+    data_bl = convert_timeseries_to_timetoevent(mmse);
+    
+%     assert(all(data_bl.years == 0));
+    data_bl = renamevars(data_bl, 'diagnosis', 'dx_time2event');
+    data_bl = renamevars(data_bl, 'years', 'years_time2event');
+        
+    writetable(data_bl, save_file);
+else
+    data_bl = readtable(save_file,'VariableNamingRule','preserve');
+end
+
+end
+

@@ -1,0 +1,63 @@
+function [table] = join_by_RID_years(table1, table2, type)
+%JOIN_BY_RID_YEARS Summary of this function goes here
+%   Detailed explanation goes here
+% Input:
+%   table1, table 2 - Both should contain variables RID and years. They are
+%       matched by year interval less than 0.5.
+%   type - 'find_right_for_each_left' or 'insert_right_into_left'. The
+%       difference is that for 'find_right_for_each_left', one record in table 2
+%       could be repeatedly inserted into multiple rows in table 1, while for 
+%       'insert_right_into_left', one record in table 2 will be inserted into 
+%       only 1 row in table 1.
+within_years = 0.5;
+
+table = table1;
+
+%% prepare the table to write
+variable_names = table2.Properties.VariableNames;
+variable_types = varfun(@class,table2,'OutputFormat','cell');
+
+variables_add = {};
+for i = 1:length(variable_names)
+    name = variable_names{i};
+    
+    if name ~= "RID" && name ~= "years"
+        if variable_types{i} == "double"
+            table.(name) = NaN(size(table1,1), 1);
+        elseif variable_types{i} == "cell"
+            table.(name) = repmat({{}}, size(table1,1), 1);
+        end
+        variables_add = cat(2, variables_add, {name});
+    end
+end
+
+%% append table2 to table1
+
+if strcmp(type, 'find_right_for_each_left')
+    for i = 1:size(table, 1)
+        ind1 = find(table{i,"RID"} == table2.RID);
+        
+        if ~isempty(ind1)
+            diff = abs(table{i,"years"} - table2.years(ind1));
+            [min_diff, min_ind] = min(diff);
+            if min_diff < within_years
+                table(i, variables_add) = table2(ind1(min_ind), variables_add);
+            end
+        end
+    end
+elseif strcmp(type, 'insert_right_into_left')
+    for i = 1:size(table2, 1)
+        ind1 = find(table.RID == table2{i,'RID'});
+
+        if ~isempty(ind1)
+            diff = abs(table.years(ind1) - table2.years(i));
+            [min_diff, min_ind] = min(diff);
+            if min_diff < within_years
+                table(ind1(min_ind), variables_add) = table2(i, variables_add);
+            end
+        end
+    end
+end
+
+end
+

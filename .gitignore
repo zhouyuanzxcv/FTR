@@ -1,0 +1,156 @@
+# Windows image file caches
+Thumbs.db
+ehthumbs.db
+
+# Folder config file
+Desktop.ini
+
+# Recycle Bin used on file shares
+$RECYCLE.BIN/
+
+# Windows Installer files
+*.cab
+*.msi
+*.msm
+*.msp
+
+# Windows shortcuts
+*.lnk
+
+# =========================
+# Operating System Files
+# =========================
+
+# OSX
+# =========================
+
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Thumbnails
+._*
+
+# Files that might appear in the root of a volume
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+
+# Directories potentially created on remote AFP share
+.AppleDB
+.AppleDesktop
+Network Trash Folder
+Temporary Items
+.apdisk
+
+# =========================
+# My ignore rules
+# =========================
+
+run_algo_save.m
+
+# =========================
+# Input
+# =========================
+
+preprocess/ADNI/2025
+preprocess/ADNI/data/*
+preprocess/ADNI/Result/*
+preprocess/ADNI/obsolete
+
+preprocess/NACC/data/*
+preprocess/NACC/Result/*
+
+preprocess/OASIS/data/*
+preprocess/OASIS/Result/*
+
+input/
+
+# =========================
+# Output
+# =========================
+
+output/*
+
+!output/ADNI_FSX_HS_FTR_MCEM/
+
+output/ADNI_FSX_HS_FTR_MCEM/*
+
+!output/ADNI_FSX_HS_FTR_MCEM/3_subtypes
+# !output/ADNI_FSX_HS_FTR_MCEM/3_subtypes_run1
+# !output/ADNI_FSX_HS_FTR_MCEM/3_subtypes_run2
+# !output/ADNI_FSX_HS_FTR_MCEM/3_subtypes_run3
+# !output/ADNI_FSX_HS_FTR_MCEM/3_subtypes_run4
+# !output/ADNI_FSX_HS_FTR_MCEM/3_subtypes_run5
+!output/ADNI_FSX_HS_FTR_MCEM/all_data.mat
+!output/ADNI_FSX_HS_FTR_MCEM/cv_inds.csv
+!output/ADNI_FSX_HS_FTR_MCEM/loglikelihood_cross_validation.csv
+
+# !output/ADNI_FSX_HM_FTR_MCEM/3_subtypes
+# !output/ADNI_FSX_HM_FTR_MCEM/3_subtypes_run1
+# !output/ADNI_FSX_HM_FTR_MCEM/3_subtypes_run2
+# !output/ADNI_FSX_HM_FTR_MCEM/3_subtypes_run3
+# !output/ADNI_FSX_HM_FTR_MCEM/3_subtypes_run4
+# !output/ADNI_FSX_HM_FTR_MCEM/3_subtypes_run5
+# !output/ADNI_FSX_HM_FTR_MCEM/all_data.mat
+
+# !output/ADNI_FSX_LS_FTR_MCEM/
+# !output/ADNI_FSX_LM_FTR_MCEM/
+
+!output/OASIS3_ROD1_HS_FTR_MCEM/
+output/OASIS3_ROD1_HS_FTR_MCEM/*
+
+!output/OASIS3_ROD1_HS_FTR_MCEM/3_subtypes
+!output/OASIS3_ROD1_HS_FTR_MCEM/all_data.mat
+
+# !output/OASIS3_ROD1_HM_FTR_MCEM/
+# !output/OASIS3_ROD1_LS_FTR_MCEM/
+# !output/OASIS3_ROD1_LM_FTR_MCEM/
+
+!output/NACC_HS_FTR_MCEM/
+output/NACC_HS_FTR_MCEM/*
+
+!output/NACC_HS_FTR_MCEM/3_subtypes
+!output/NACC_HS_FTR_MCEM/all_data.mat
+
+# !output/NACC_HM_FTR_MCEM/
+# !output/NACC_LS_FTR_MCEM/
+# !output/NACC_LM_FTR_MCEM/
+
+# =========================
+# Algorithm
+# =========================
+
+FTR_code/core/obsolete
+
+# =========================
+# Analysis
+# =========================
+
+analysis/*
+
+!analysis/figures
+!analysis/graphics
+!analysis/utils
+
+!analysis/compare_methods/
+analysis/compare_methods/*
+!analysis/compare_methods/figures
+
+!analysis/compare_subtypes/
+analysis/compare_subtypes/*
+!analysis/compare_subtypes/figures
+
+
+# =========================
+# Misc
+# =========================
+
+figures/
+competing_methods/
+gpml/
+obsolete/
+tmp/

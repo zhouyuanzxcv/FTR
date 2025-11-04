@@ -1,0 +1,368 @@
+function [outputArg1,outputArg2] = run_hyperparameter_search(inputArg1,inputArg2)
+%DEMO Summary of this function goes here
+%   Detailed explanation goes here
+close all
+
+addpath(genpath("FTR_code/"));
+addpath(genpath("utils/"));
+addpath(genpath('analysis'));
+
+
+save_path = './output/demo/';
+if ~exist(save_path, 'dir')
+    mkdir(save_path)
+end
+
+choose_search_max = 0;
+options = [];
+
+if choose_search_max
+    save_file = [save_path, 'traj_data_list_run2.mat']; % for search_max
+    options.deconv = 'search_max';
+else
+    save_file = [save_path, 'traj_data_list_run3.mat']; % for min_max
+    options.deconv = 'min_max';
+end
+
+if 0 % create all the trajectory data
+    num_runs = 10000;
+
+    traj_data_list = {};
+    start_pt = 0;
+    end_pt = 1;
+    
+    num_pts = 6;
+    maximum = 5;
+    
+    for i = 1:num_runs
+        traj_data = create_traj_data_randomly(start_pt, end_pt, num_pts, maximum);
+        traj_data_list{i} = traj_data;
+    end
+    save(save_file, 'traj_data_list');
+else % load existing data
+    load(save_file);
+end
+
+if 1
+    show_selected_results(traj_data_list, options);
+    if 0
+        export_fig('./figures/ftr_monotonic_examples.jpg','-transparent','-r500');
+    end
+end
+
+if choose_search_max
+    train_hyperparameter_for_search_max(traj_data_list);
+else
+    % The best result comes from (lambda, stage_thresh) = (10, 0.98) for medium
+    % noise, (20, 0.97) for large noise
+    train_hyperparameter_for_min_max(traj_data_list);
+end
+
+end
+
+function show_selected_results(traj_data_list, options)
+num_runs = length(traj_data_list);
+nsamp = 1000;
+cdf_pts = 101;
+
+
+plot_rows = 8;
+plot_cols = 7;
+run_inds = (0:plot_rows*plot_cols-1)*100+1;
+
+figure;
+
+t = tiledlayout(plot_rows, plot_cols, 'TileSpacing','Compact');
+
+for idx = 1:length(run_inds)
+    nexttile;
+
+    run_idx = run_inds(idx);
+    traj_data = traj_data_list{run_idx};
+
+    sigma = 0.5;
+    
+    X = zeros(nsamp,1);
+    s = zeros(nsamp,1);
+    
+    for i = 1:nsamp
+        s(i) = rand(1);
+        X(i) = normrnd(interp_traj(s(i),traj_data),sigma);
+    end
+
+    h_data = scatter(s, X, 3, [0.5,0.5,0.5],'filled');
+    hold on
+    h_gt = plot_traj(traj_data);
+
+    % xlabel({'Stage'});
+    % ylabel('x');
+
+    [s_est, f_est] = ftr_base(X, cdf_pts, sigma, 0, max(X), options);
+
+    h_est = plot(s_est, f_est, 'r', 'linewidth', 1);
+
+    if idx == 1
+        legend([h_gt,h_data,h_est],{'Ground Truth','Data','Estimated'}, ...
+            "orientation",'horizontal','location','northoutside');
+    end
+end
+
+xlabel(t,'Stage')
+ylabel(t,'Biomarker value')
+
+end
+
+%% training 
+
+
+function mads_all = read_results(lambdas, mus, search_result_file, traj_data_list)
+num_runs = length(traj_data_list);
+mads_all = zeros(length(lambdas), length(mus), num_runs, 3);
+
+for idx1 = 1:length(lambdas)
+    for idx2 = 1:length(mus)
+        filename = ['./output/demo/', search_result_file, '/', ...
+            num2str(idx1),'_',num2str(idx2),'.csv'];
+        mads_multiple = readmatrix(filename);
+        mads_all(idx1, idx2, :, :) = mads_multiple;
+    end
+end
+
+end
+
+function plot_hyperparameter_errors(lambdas, mus, mads_all1, ylabel_str, xlabel_str, title_str)
+mean_mads2 = mean(mads_all1,3);
+mesh(log10(mus), log10(lambdas), mean_mads2);
+mean_mads2
+xlabel(xlabel_str);
+ylabel(ylabel_str);
+zlabel('Average MAE');
+
+
+[M, ind] = min(mean_mads2, [], 'all', 'linear');
+[row_idx, col_idx] = ind2sub(size(mean_mads2), ind);
+disp(['Best lambda, mu, mean_mad for ', title_str])
+[lambdas(row_idx), mus(col_idx), M]
+
+hold on;
+scatter3(log10(mus(col_idx)), log10(lambdas(row_idx)), M, 50, 'red', 'filled');
+
+title({title_str, sprintf('Best MAE of %.4f at: (%g, %g)', M, lambdas(row_idx), mus(col_idx))}, ...
+    'fontweight','normal');
+end
+
+
+function train_hyperparameter_for_search_max(traj_data_list)
+
+search_result_file = 'coarse_grid_search_run2';
+lambdas = 10.^(-4:2);
+mus = 10.^(-4:2);
+
+figure;
+
+if 0
+    grid_search_hyperparameter('lambda','lambda2','search_max', ...
+        lambdas, mus, search_result_file, traj_data_list);
+end
+
+mads_all_coarse = read_results(lambdas, mus, search_result_file, traj_data_list);
+
+
+subplot(1,2,1)
+plot_hyperparameter_errors(lambdas, mus, mads_all_coarse(:,:,:,2), ...
+    'log_{10} \lambda', 'log_{10} \lambda^{\prime}', 'Coarse search');
+
+% % large noise
+% subplot(2,2,2);
+% plot_hyperparameter_errors(lambdas, mus, mads_all_coarse(:,:,:,3), ...
+%     'log_{10} \lambda', 'log_{10} \mu', 'coarse large noise');
+
+
+search_result_file = 'fine_grid_search_run2';
+lambdas = 10 * 2.^(-3:3);
+mus = 0.01 * 2.^(-3:3);
+
+if 0
+    grid_search_hyperparameter('lambda','lambda2','search_max', ...
+        lambdas, mus, search_result_file, traj_data_list);
+end
+
+mads_all_fine = read_results(lambdas, mus, search_result_file, traj_data_list);
+
+subplot(1,2,2)
+plot_hyperparameter_errors(lambdas, mus, mads_all_fine(:,:,:,2), ...
+    'log_{10} \lambda', 'log_{10} \lambda^{\prime}', 'Fine search');
+
+% large noise
+% subplot(2,2,4);
+% plot_hyperparameter_errors(lambdas, mus, mads_all_fine(:,:,:,3), ...
+%     'log_{10} \lambda', 'log_{10} \mu', 'fine large noise');
+
+%     mean(mads)
+
+if 0
+export_fig('./figures/hyperparameter_search.jpg','-transparent','-r500','-nocrop');
+end
+
+end
+
+
+%% common search function
+function grid_search_hyperparameter(name1, name2, deconv,  ...
+    param1s, param2s, search_result_file, traj_data_list)
+start_t = tic;
+
+num_runs = length(traj_data_list);
+
+save_path = ['./output/demo/', search_result_file, '/'];
+if ~exist(save_path, 'dir')
+    mkdir(save_path)
+end
+    
+[idx1s,idx2s] = ndgrid(1:length(param1s), 1:length(param2s));
+Z = [idx1s(:),idx2s(:)];
+
+if isempty(gcp('nocreate')), parpool; end
+
+disp('Begin grid search hyperparameter:');
+fprintf('%s\n', repmat('.',1,size(Z,1)));
+
+parfor i = 1:size(Z,1)
+    idx1 = Z(i,1);
+    idx2 = Z(i,2);
+
+    param1 = param1s(idx1);
+    param2 = param2s(idx2);
+    options = [];
+    options.(name1) = param1;
+    options.(name2) = param2; % in ftr_base, mu is used differently
+    options.deconv = deconv;
+    options.maximum = 5;
+
+    mads_multiple = zeros(num_runs, 3);
+    for run_idx = 1:num_runs
+        traj_data = traj_data_list{run_idx};
+        [mads, Rs] = run_demo_single(0, traj_data, options);
+
+        % the first row is for w.o.f. version. So use the with
+        % filtering version (second row)
+        mads_multiple(run_idx,:) = mads(2,:);
+    end
+    
+    filename = [save_path, num2str(idx1),'_',num2str(idx2),'.csv'];
+    writematrix(mads_multiple, filename);       
+
+    fprintf('.');
+
+end
+
+fprintf('\nGrid search lasts %.2f hours.\n', toc(start_t) / 3600);
+end
+
+
+
+
+
+%% for min_max, may need to change later
+function show_grid_search_results_for_min_max(lambdas, stage_threshs, search_result_file, traj_data_list)
+num_runs = length(traj_data_list);
+mads_all = zeros(length(lambdas), length(stage_threshs), num_runs, 3);
+
+for idx1 = 1:length(lambdas)
+    for idx2 = 1:length(stage_threshs)
+        filename = ['./output/demo/', search_result_file, '/', ...
+            num2str(idx1),'_',num2str(idx2),'.csv'];
+        mads_multiple = readmatrix(filename);
+        mads_all(idx1, idx2, :, :) = mads_multiple;
+    end
+end
+
+figure;
+
+subplot(1,3,1)
+% medium noise
+mean_mads2 = mean(mads_all(:,:,:,2),3);
+mesh(stage_threshs, log10(lambdas), mean_mads2);
+mean_mads2
+
+xlabel('stage threshold');
+ylabel('log_{10} \lambda');
+title('medium noise');
+
+[M, ind] = min(mean_mads2, [], 'all', 'linear');
+[row_idx, col_idx] = ind2sub(size(mean_mads2), ind);
+disp('Best lambda, stage thresh, mean_mad for medium noise:')
+[lambdas(row_idx), stage_threshs(col_idx), M]
+
+subplot(1,3,2);
+% large noise
+mean_mads2 = mean(mads_all(:,:,:,3),3);
+mesh(stage_threshs, log10(lambdas), mean_mads2);
+mean_mads2
+
+xlabel('stage threshold');
+ylabel('log_{10} \lambda');
+title('large noise');
+
+[M, ind] = min(mean_mads2, [], 'all', 'linear');
+[row_idx, col_idx] = ind2sub(size(mean_mads2), ind);
+disp('Best lambda, stage thresh, mean_mad for large noise:')
+[lambdas(row_idx), stage_threshs(col_idx), M]
+
+subplot(1,3,3)
+% combined error
+mean_mads2 = mean(mean(mads_all(:,:,:,[2:3]),3), 4);
+mesh(stage_threshs, log10(lambdas), mean_mads2);
+mean_mads2
+
+xlabel('stage threshold');
+ylabel('log_{10} \lambda');
+title('combined error from medium and large noise');
+
+[M, ind] = min(mean_mads2, [], 'all', 'linear');
+[row_idx, col_idx] = ind2sub(size(mean_mads2), ind);
+disp('Best lambda, stage thresh, mean_mad for combined error:')
+[lambdas(row_idx), stage_threshs(col_idx), M]
+
+end
+
+
+function train_hyperparameter_for_min_max(traj_data_list)
+
+search_result_file = 'search_hyperparameter_for_min_max';
+lambdas = [1,2,5,10,20,50,100];
+stage_threshs = [0.95:0.01:1];
+
+if 0
+    grid_search_hyperparameter('lambda','stage_thresh','min_max',lambdas, ...
+        stage_threshs, search_result_file, traj_data_list);
+end
+show_grid_search_results_for_min_max(lambdas, stage_threshs, search_result_file, traj_data_list);
+
+end
+
+
+%% data creation
+function traj_data = create_traj_data_randomly(start_pt, end_pt, num_pts, maximum)
+traj_x = linspace(start_pt, end_pt, num_pts);
+traj_y = rand(1, num_pts - 1)*maximum;
+traj_y = sort(traj_y);
+traj_y = [0 traj_y];
+traj_sigma = 20;
+
+traj_x_interp = linspace(min(traj_x), max(traj_x), 1001);
+traj_y_interp = interp1(traj_x, traj_y, traj_x_interp);
+traj_y_interp = imgaussfilt(traj_y_interp, traj_sigma);
+traj_data = {traj_x_interp, traj_y_interp};
+
+end
+
+
+function f = interp_traj(s,traj_data)    
+f = interp1(traj_data{1},traj_data{2},s);
+end
+
+function h = plot_traj(traj_data)
+stage_t = 0:0.001:1;
+h = plot(stage_t,interp_traj(stage_t,traj_data), 'k', 'linewidth', 1);
+end

@@ -1,0 +1,289 @@
+function [mads, Rs] = run_demo_single(show_fig, traj_data, options)
+
+close all
+
+addpath(genpath("FTR_code/"));
+addpath(genpath("utils/"));
+addpath(genpath('analysis'));
+
+save_path = './output/demo/';
+if ~exist(save_path, 'dir')
+    mkdir(save_path)
+end
+
+if nargin < 3
+    options = [];
+    options.deconv = 'search_max';
+end
+
+if nargin < 2
+    traj_data = 'sigmoid';
+end
+
+% tic
+
+nsamp = 3000;
+sigmas = [0.01, 0.1, 0.2];
+cdf_pts = 101;
+
+start_pt = 0;
+end_pt = 1;
+
+num_pts = 6;
+
+maximum = parse_param(options, 'maximum', 5);
+
+
+% show_fig = 0;
+
+if nargin < 2 || (ischar(traj_data) && any(strcmp(traj_data,{'sigmoid','arbitrary'}) ))
+    if 1
+        if strcmp(traj_data, 'arbitrary')
+            traj_data = create_traj_data_randomly(start_pt, end_pt, num_pts, maximum);
+        else
+            traj_data = create_traj_data_sigmoid(start_pt, end_pt, 1001, maximum);
+        end
+        
+    else
+        S = load('output/demo/last_run.mat');
+        traj_data = S.traj_data;
+    end
+end
+
+if nargin < 1
+    show_fig = 1;
+end
+
+
+mads = [];
+
+plot_col = 4;
+
+if show_fig
+    fh = figure;
+    set(fh, 'position', [96   356   845   543]);
+    t = tiledlayout(3, plot_col);
+end
+
+
+for sigma_idx = 1:length(sigmas)
+    sigma = sigmas(sigma_idx)*maximum;
+    
+    X = zeros(nsamp,1);
+    s = zeros(nsamp,1);
+    
+    for i = 1:nsamp
+        s(i) = rand(1);
+        X(i) = normrnd(interp_traj(s(i),traj_data),sigma);
+    end
+
+    %% original trajectory with data
+    if show_fig
+    figure(fh);
+    nexttile;
+    
+    h_data = scatter(s, X, 3, [0.5,0.5,0.5],'filled');
+    hold on
+    h_gt = plot_traj(traj_data);
+    hold off
+
+    
+    if sigma_idx == 1
+        lh = legend([h_gt,h_data], {'Ground Truth','Data'}, 'location', ...
+            'northwest','orientation','vertical');
+        lh = adjust_legend_pos(lh, gca);
+        
+        title({'Original trajectory and data','','','','',''}, 'fontweight', 'normal');
+    end
+    
+   
+    xlabel('Stage');
+    ylabel({['\sigma = ',num2str(sigma)],'x'});
+    
+    %% CDF
+    nexttile;
+    [Fy,Fx] = ecdf(X);
+    h_cdf = plot(Fx, Fy, 'b-','linewidth', 1);
+    
+    xlabel('x');
+    ylabel('Probability');
+    
+    % also plot the smoothed inverse of the true trajectory
+    if 1
+        [s1, x1, s, x] = calc_finv_tilde(traj_data, min(X), max(X));
+        delta_x = x1(2) - x1(1);
+
+        [PSF_y, PSF_x] = create_gaussian_psf(delta_x, sigma);
+        s2 = imfilter(s1, PSF_y, 'conv', 'replicate');
+        hold on;
+        h_smoothed_finv = plot(x1, s2, '--', 'color', [1,0,0], 'linewidth', 1);
+        h_finv = plot(x, s, 'r:', 'linewidth', 1);
+    end
+
+    
+    xlim([-0.75 maximum + 0.75]);
+    %xlim([0 1]);
+    ylim([0 1]);
+
+    
+    if sigma_idx == 1
+        lh = legend([h_cdf, h_finv, h_smoothed_finv], {'CDF', 'f^{-1}', 'Smoothed f^{-1}'}, ...
+        'location', 'northwest','orientation','vertical');
+        lh = adjust_legend_pos(lh, gca);
+    
+        title({'CDF','','','','',''}, 'fontweight', 'normal');
+    end
+    end
+    
+    %% FTR w.o.f.
+    
+    [s,f] = ftr_base(X, cdf_pts, 0, 0, maximum, options);
+    
+    if show_fig
+    figure(fh);
+    nexttile;
+    gt_traj_h = plot_traj(traj_data);
+    set(gt_traj_h, 'color', 'k');
+    hold on;
+    
+    est_traj_h = plot(s,f, 'r', 'linewidth', 1);
+    xlim([0, 1]);
+    ylim([-0.75, maximum + 0.75]);
+    %ylim([0 1]);
+    
+    xlabel('Stage');
+    ylabel('x');
+    
+    
+    if sigma_idx == 1
+        lh = legend([est_traj_h, gt_traj_h], {'Estimated', 'Ground Truth'}, ...
+            'location', 'northwest','orientation','vertical');
+        lh = adjust_legend_pos(lh, gca);
+        title({'Reconstructed without','deconvolution','','','',''}, 'fontweight', 'normal');
+    end
+
+    end
+    
+    mads(1,sigma_idx) = mean(abs(interp_traj(s,traj_data) - f));
+    R = corrcoef(interp_traj(s,traj_data), f);
+    Rs(1,sigma_idx) = R(1,2);
+    
+    %% FTR
+    
+    [s,f] = ftr_base(X, cdf_pts, sigma, 0, maximum, options);
+
+    if show_fig
+    figure(fh);
+    nexttile;
+    gt_traj_h = plot_traj(traj_data);
+    set(gt_traj_h, 'color', 'k');
+    hold on;
+
+    est_traj_h = plot(s,f, 'r', 'linewidth', 1);
+    xlim([0, 1]);
+    ylim([-0.75, maximum + 0.75])
+    %ylim([0 1]);
+
+    
+    
+    xlabel('Stage');
+    ylabel('x');
+    
+    
+    if sigma_idx == 1
+        lh = legend([est_traj_h, gt_traj_h], {'Estimated', 'Ground Truth'}, ...
+            'location', 'northwest', 'orientation', 'vertical');
+        lh = adjust_legend_pos(lh, gca);
+        title({'Reconstructed with','deconvolution','','','',''}, 'fontweight', 'normal');
+    end
+    end
+    
+    mads(2,sigma_idx) = mean(abs(interp_traj(s,traj_data) - f));
+    R = corrcoef(interp_traj(s,traj_data), f);
+    Rs(2,sigma_idx) = R(1,2);
+
+end
+
+if 0
+export_fig('./figures/ftr_example_sigmoid.jpg','-transparent','-r500','-nocrop');
+end
+
+% toc
+
+fh = [];
+
+if show_fig
+    disp('MADs (row 1: w.o. deconv; row 2: w. deconv)')
+    mads
+
+    % disp('R^2s (row 1: w.o.f.; row 2: w.f.)')
+    % Rs.^2
+    
+    save_path = './output/demo/';
+    if ~exist(save_path, 'dir')
+        mkdir(save_path)
+    end
+
+    save([save_path, 'last_run.mat']);
+end
+
+end
+
+function lh = adjust_legend_pos(lh, ah)
+ah_pos = get(ah, 'position');
+pos = lh.Position;
+
+pos(1) = ah_pos(1);
+pos(2) = ah_pos(2) + ah_pos(4) + 0.02;
+
+lh.Position = pos;
+end
+
+function [s1, x1, s, x] = calc_finv_tilde(traj_data, xmin, xmax)
+x = linspace(min(traj_data{2}), max(traj_data{2}), length(traj_data{2}));
+s = interp1(traj_data{2}, traj_data{1}, x);
+delta_x = x(2) - x(1);
+x1_left = fliplr((x(1) - delta_x:-delta_x:xmin));
+x1_right = (x(end) + delta_x:delta_x:xmax);
+s1_left = zeros(size(x1_left));
+s1_right = ones(size(x1_right));
+x1 = [x1_left, x, x1_right];
+s1 = [s1_left, s, s1_right];
+end
+
+function h = plot_traj(traj_data)
+stage_t = 0:0.001:1;
+h = plot(stage_t,interp_traj(stage_t,traj_data), 'k','linewidth', 1);
+end
+
+
+function traj_data = create_traj_data_randomly(start_pt, end_pt, num_pts, maximum)
+traj_x = linspace(start_pt, end_pt, num_pts);
+traj_y = rand(1, num_pts - 1)*maximum;
+traj_y = sort(traj_y);
+traj_y = [0 traj_y];
+traj_sigma = 20;
+
+traj_x_interp = linspace(min(traj_x), max(traj_x), 1001);
+traj_y_interp = interp1(traj_x, traj_y, traj_x_interp);
+traj_y_interp = imgaussfilt(traj_y_interp, traj_sigma);
+traj_data = {traj_x_interp, traj_y_interp};
+
+end
+
+function traj_data = create_traj_data_sigmoid(start_pt, end_pt, num_pts, maximum)
+traj_x = linspace(start_pt, end_pt, num_pts);
+
+alpha = 10;
+beta = 0.5 * (start_pt + end_pt);
+
+traj_y = 1 ./ (1 + exp(-alpha * (traj_x - beta)));
+
+traj_data = {traj_x, traj_y*maximum};
+
+end
+
+
+function f = interp_traj(s,traj_data)    
+f = interp1(traj_data{1},traj_data{2},s);
+end

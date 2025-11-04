@@ -1,0 +1,201 @@
+function [confusion_matrices, percentage_consistency, time_costs, kept_switched_PTIDs] ...
+    = run_algorithms_for_longitudinal_stability(...
+        dataset_names, method_names, nsubtype_list, data_splits, ...
+        save_path, validate, postfix)
+
+if nargin < 6
+    validate = 0;
+end
+
+if nargin < 7
+    postfix = '';
+end
+
+if ~validate
+    save_path = [save_path, postfix];
+end
+
+if ~exist(['./output/',save_path], 'dir')
+    mkdir(['./output/',save_path]);
+end
+
+
+szs = [length(data_splits), length(dataset_names), ...
+    length(method_names), length(nsubtype_list)];
+
+confusion_matrices = cell(szs);
+percentage_consistency = nan(szs);
+time_costs = nan(szs);
+kept_switched_PTIDs = cell(szs);
+
+
+[idx1,idx2,idx3,idx4] = ndgrid(1:length(data_splits), 1:length(dataset_names), ...
+    1:length(method_names), 1:length(nsubtype_list));
+Z = [idx1(:),idx2(:),idx3(:),idx4(:)];
+
+
+for idx = 1:size(Z,1)
+%     try
+        split_idx = Z(idx, 1);
+        data_idx = Z(idx, 2);
+        method_idx = Z(idx, 3);
+        subtype_idx = Z(idx, 4);
+
+        split = data_splits{split_idx};
+        data_name = dataset_names{data_idx};
+        method_name = method_names{method_idx};
+        nsubtype = nsubtype_list(subtype_idx);
+
+        disp(['--- Processing validate=', int2str(validate),' ', ...
+            split, ' of ', data_name, ' using ', method_name, ...
+            ' with ', int2str(nsubtype), ' subtypes with postfix ', postfix]);
+
+
+        % Do not apply sustain to HS and HM data.
+        if strcmp(method_name,'sustain') && ( ...
+                strcmp(data_name(end-1:end), 'HS') || ...
+                strcmp(data_name(end-4:end-3), 'HS')  ...
+                || (strcmp(data_name(end-1:end), 'HM') && ismember(nsubtype, [2,3,4])) || ...
+                (strcmp(data_name(end-4:end-3), 'HM') && ismember(nsubtype, [2,3,4])) ...
+                )
+
+            conf_matrix = NaN;
+            run_time = NaN;
+            kept_switched = [];
+            
+
+            % run algorithm for the discovery/validation set
+        else
+
+            options = [];
+            options.data_split = split;
+            options.nsubtype = nsubtype;
+
+            if validate
+
+                options.re_subtype_staging = 1;
+                options.group_sel = 2;
+                options.save_results = 0;
+                options.postfix = postfix;
+            else
+                output_file_name = sprintf('%s/%s/%s_%s', ...
+                    save_path, split, data_name, method_name);
+
+                save_path_confusion = ['./output/',save_path, '/confusion_matrix/'];
+                if ~exist(save_path_confusion, 'dir')
+                    mkdir(save_path_confusion);
+                end
+
+                save_path_confusion = strcat(save_path_confusion, [split,'_', ...
+                    data_name, '_', method_name, '_', num2str(nsubtype), '.csv']);
+
+                run_time_path = ['output/',output_file_name,'/', ...
+                    num2str(nsubtype),'_subtypes/elapsed_t.csv'];
+
+                options.output_file_name = output_file_name;
+
+                if exist(save_path_confusion, 'file')
+                    options.re_subtype_staging = 1;
+                    options.save_results = 0;
+                end
+            end
+
+            [subtype_stage, mdl, options, train_data, test_data] = ...
+                run_algo(data_name, method_name, options);
+            %                     close all;
+
+            %% permute the subtypes
+            [data,mmse,time2event,dx_sel] = load_data_all(data_name);
+            subtype_stage = renamevars(subtype_stage, 'PTID', 'RID');
+            subtype_stage = renamevars(subtype_stage, 'years_from_baseline', 'years');
+            subtype_stage.years = round(subtype_stage.years, 4);
+            data.years = round(data.years, 4);
+            joindata = outerjoin(subtype_stage,data,'Keys',{'RID','years'},'MergeKeys',true);
+
+            
+            joindata = joindata(joindata.group == 1, :);
+
+            P = determine_trajectory_order(joindata, mmse, nsubtype);
+            [mdl, joindata] = permute_subtypes(mdl, joindata, P);
+
+            if ~validate
+                % should match the trajectory in longitudinal
+                % stability output
+                perm_file = 'permutation.csv';
+
+                perm_path = ['output/',output_file_name,'/', ...
+                    num2str(nsubtype),'_subtypes/', perm_file];
+                writematrix((1:nsubtype)*P', perm_path);
+            end
+
+
+            %% calculate confusion matrix
+            switch method_name
+                case {'FTR_kmeans','FTR_MCEM'}
+                    [stage_train,subtype_train,extra_train] = ...
+                        cal_stage_subtype(train_data.vols, train_data.RID, mdl, options);
+                    [stage_test,subtype_test,extra_test] = ...
+                        cal_stage_subtype(test_data.vols, test_data.RID, mdl, options);
+                case 'sustain'
+                    [stage_train,subtype_train,extra_train] = ...
+                        cal_stage_subtype_sustain(train_data.vols, train_data.RID, mdl, options);
+                    [stage_test,subtype_test,extra_test] = ...
+                        cal_stage_subtype_sustain(test_data.vols, test_data.RID, mdl, options);
+            end
+
+            train_subtype_stage = array2table([train_data.RID, train_data.years, train_data.labels, stage_train, subtype_train], ...
+                'VariableNames', {'PTID' ,'years_from_baseline','Diagnosis','stage','subtype'});
+            test_subtype_stage = array2table([test_data.RID, test_data.years, test_data.labels, stage_test, subtype_test], ...
+                'VariableNames', {'PTID' ,'years_from_baseline','Diagnosis','stage','subtype'});
+
+
+            % Initialize confusion matrix
+            [conf_matrix, consistent_subject_IDs, inconsistent_subject_IDs] ...
+                = calc_confusion_mat(...
+                train_subtype_stage.PTID, train_subtype_stage.subtype, ...
+                test_subtype_stage.PTID, test_subtype_stage.subtype, nsubtype);
+
+            [train_RID,ia] = unique(train_data.RID);
+            train_prob = extra_train.subtype_prob(ia, :);
+
+            train_prob_con = train_prob(ismember( ...
+                train_RID, consistent_subject_IDs),:);
+            train_prob_incon = train_prob(ismember( ...
+                train_RID, inconsistent_subject_IDs),:);
+
+            train_probs = [max(train_prob_con, [], 2); max(train_prob_incon, [], 2)];
+            %                     train_probs = tiedrank(train_probs);
+            groups = [ones(length(train_prob_con),1); ones(length(train_prob_incon),1)*2];
+            %                     figure, boxplot(train_probs, groups);
+
+            kept_switched = struct;
+            kept_switched.train_probs = train_probs;
+            kept_switched.groups = groups;
+
+            if ~validate
+                writematrix(conf_matrix, save_path_confusion);
+
+                run_time = readmatrix(run_time_path);
+            else
+                run_time = NaN;
+            end
+        end
+
+        confusion_matrices{split_idx, data_idx, method_idx, subtype_idx} = conf_matrix;
+        consistency1 = sum(diag(conf_matrix)) / sum(sum(conf_matrix));
+        percentage_consistency(split_idx, data_idx, method_idx, subtype_idx) = ...
+            consistency1;
+        fprintf('Consistency: %.2f\n', consistency1);
+        time_costs(split_idx, data_idx, method_idx, subtype_idx) = run_time;
+
+        kept_switched_PTIDs{split_idx, data_idx, method_idx, subtype_idx} = kept_switched;
+%     catch me
+%         disp(['WARNING! Error in processing validate=', int2str(validate), ...
+%             ' ',  split, ' of ', data_name, ' using ', method_name, ...
+%             ' with ', int2str(nsubtype), ' subtypes with postfix ', postfix]);
+%         msgText = getReport(me);
+%         disp(msgText);
+%     end
+end
+
+end

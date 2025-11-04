@@ -1,0 +1,441 @@
+function [similarity, n_meta, meta_labels, proption, metric, bes_ep1, mean_ARIs] =  ...
+    sel_init_by_meta_clustering(subtype, sgm, thresh_same_partition1)
+
+% thresh_same_partition = 0.98;
+
+similarity = create_partition_similarity(subtype);
+
+similarity = similarity - diag(diag(similarity));
+
+thresh_same_partition = max(similarity(:)) * thresh_same_partition1;
+
+% similarity(similarity < 0.5) = 0;
+
+% The eigen-gap method does not work well
+%     eig_S = sort(eig(similarity), 'descend');
+%     gaps = eig_S(1:end-1) - eig_S(2:end);
+%     [~, n_meta] = max(gaps); % Number of meta-clusters
+
+n_meta_max = 5;
+
+Ks = 1:n_meta_max;
+
+use_bootstrap = 0;
+
+n_bootstraps = 100;
+
+if use_bootstrap
+    %% repeat the above process and select by bootstrapping
+    
+    % n_meta_max = 5;
+    [bes_ep, metric, n_meta, meta_labels, proption] = bootstrap_strategy_selection(subtype, ...
+        similarity, n_bootstraps, ...
+        thresh_same_partition, n_meta_max);
+    bes_ep1 = bes_ep;
+
+    Ks = n_meta;
+end
+
+
+kmeans_replicates = 100;
+
+[n_meta, bes_ind_mode, bes_metric_mode, bes_ind_center, ...
+    bes_metric_center, meta_labels, proption, mean_ARIs] = ...
+    sel_init_by_meta_clustering_impl(similarity, ...
+    Ks, kmeans_replicates, thresh_same_partition, subtype);
+
+if ~use_bootstrap
+    bes_ep1 = bes_ind_mode;
+    metric = bes_metric_mode;
+end
+
+
+
+
+
+
+
+
+
+% if 1 % select by partition mode
+% %     sim_mat = similarity(inds_choosen, inds_choosen);
+% % 
+% %     [metric, bes_ep] = max(mean(sim_mat, 2));
+% % 
+% %     [bes_ep, metric] = select_commonly_converged(sim_mat, thresh_same_partition);
+% elseif 0 % select by co-occurence matrix and spectral clustering
+%     [bes_ep, metric] = select_by_cooccurence_matrix(subtype(:,inds_choosen));
+% else % select by averaging partitions
+%     [subtype_avg, sgm_avg, subtype_perms, sgm_perms] = average_subtypes(...
+%         subtype(:,inds_choosen), sgm(:,:,inds_choosen));
+%     [metric, bes_ep] = select_closest_partition(subtype(:,inds_choosen), subtype_avg);
+% end
+
+
+
+end
+
+function [n_meta, bes_ind_mode, bes_metric_mode, bes_ind_center, ...
+    bes_metric_center, labels, proption, mean_ARIs] = ...
+    sel_init_by_meta_clustering_impl(boot_ari, ...
+    Ks, kmeans_replicates, thresh_same_partition, subtype)
+
+
+% Do meta-clustering
+[n_meta, optimal_labels, labels] = get_num_meta_cluster(boot_ari, Ks, kmeans_replicates);
+
+mean_ARIs = [];
+for k = 1:n_meta
+    inds = optimal_labels == k;
+    sim_k = boot_ari(inds, inds);
+    tmp = sim_k(triu(true(size(sim_k)), 1));
+    mean_ARIs(k) = mean(tmp);
+end
+
+proption = mean(optimal_labels == 1:n_meta, 1);
+
+[~, best_meta] = max(proption);
+% [~, best_meta] = max(proption .* mean_ARIs);
+
+inds = find(optimal_labels == best_meta);
+
+
+% Evaluate both strategies on this sample
+[metric, ind] = max(mean(boot_ari(inds, inds), 2));
+
+bes_ind_center = inds(ind);
+bes_metric_center = metric;
+
+% thresh_same_partition = mean_ARIs(best_meta);
+% thresh_same_partition = 0;
+% select mode from the largest meta-cluster
+[bes_ep, metric] = select_commonly_converged(boot_ari(inds, inds), thresh_same_partition);
+
+% [bes_ep, metric] = select_by_cooccurence_matrix(subtype(:,inds));
+
+bes_ind_mode = inds(bes_ep);
+bes_metric_mode = metric;
+
+labels = optimal_labels;
+
+
+
+
+end
+
+
+
+function [bes_ep, metric, n_meta, labels, proption] = bootstrap_strategy_selection(subtype, ari_matrix, ...
+    n_bootstraps, thresh_same_partition, n_meta_max)
+% Input: ARI matrix (n×n), number of bootstrap samples
+% Output: Recommended strategy ('mean_ari' or 'density_peak')
+
+% subsample_ratio = 0.8;
+n = size(ari_matrix, 1);
+
+
+subtype1 = zeros(size(subtype,1), n_bootstraps); % mean-ARI
+subtype2 = zeros(size(subtype,1), n_bootstraps); % density-peak
+
+inds_all = [];
+metrics_all = [];
+
+inds_all1 = [];
+metrics_all1 = [];
+
+n_meta_all = [];
+labels_all = [];
+
+proption_all = {};
+
+Ks = 1:n_meta_max;
+
+parfor b = 1:n_bootstraps
+    % Bootstrap sample (with replacement)
+
+    % boot_idx = randperm(n, floor(subsample_ratio * n));
+    boot_idx = randsample(n, n, true);
+
+    boot_ari = ari_matrix(boot_idx, boot_idx);
+    subtype_boot = subtype(:, boot_idx);
+%     V_boot = V(boot_idx, :);
+
+    % L_sym_boot = L_sym(boot_idx, boot_idx);
+
+
+
+    kmeans_replicates = 10;
+
+    [n_meta, bes_ind_mode, bes_metric_mode, bes_ind_center, ...
+        bes_metric_center, labels, proption] = ...
+        sel_init_by_meta_clustering_impl(boot_ari, ...
+        Ks, kmeans_replicates, thresh_same_partition);
+
+    proption_all{b} = proption;
+
+    n_meta_all(b) = n_meta;
+
+
+
+    subtype1(:,b) = subtype_boot(:, bes_ind_center);
+
+    inds_all(b) = boot_idx(bes_ind_center);
+    metrics_all(b) = bes_metric_center;
+
+    
+    subtype2(:,b) = subtype_boot(:, bes_ind_mode);
+
+    inds_all1(b) = boot_idx(bes_ind_mode);
+    metrics_all1(b) = bes_metric_mode;
+
+
+    labels_all(:,b) = labels;
+end
+
+
+sim1 = create_partition_similarity(subtype1);
+sim2 = create_partition_similarity(subtype2);
+
+mean1 = mean(mean(sim1));
+mean2 = mean(mean(sim2));
+
+
+[bes_ep, metric] = select_commonly_converged(sim2, thresh_same_partition);
+bes_ep = inds_all1(bes_ep);
+
+% bes_ep = mode(inds_all1);
+% metric = mode(metrics_all1);
+
+n_meta = mode(n_meta_all);
+
+b_sel = find(inds_all1 == bes_ep & n_meta_all == n_meta, 1);
+if isempty(b_sel)
+    b_sel = find(inds_all1 == bes_ep, 1);
+end
+
+n_meta = n_meta_all(b_sel);
+
+labels = labels_all(:,b_sel);
+
+proption = proption_all{b_sel};
+
+
+
+end
+
+function [bes_ep, metric] = select_commonly_converged(sim_mat, thresh_same_partition)
+sim2 = sim_mat;
+sim2(sim2 < thresh_same_partition) = 0;
+
+sim_vec = sum(sim2, 2, 'omitnan');
+[metric, bes_ep] = max(sim_vec);
+metric = sum(double(sim2(bes_ep,:) >= thresh_same_partition)); % number of same results
+
+
+end
+
+
+
+
+
+function [max_sim, bes_ep] = select_closest_partition(subtype, labels)
+sim = [];
+for i = 1:size(subtype,2)
+    sim(i) = rand_index(subtype(:,i), labels);
+end
+
+[max_sim,bes_ep] = max(sim);
+end
+
+
+function [optimal_K, optimal_labels, labels] = get_num_meta_cluster(S, Ks, kmeans_repeats)
+
+% if 0
+%     ari_threshold = 0.98;
+%     binary_matrix = S >= ari_threshold; % Binarize
+% 
+%     % Find connected components (approximate meta-clusters)
+%     G = graph(binary_matrix);
+%     optimal_labels = conncomp(G); % Each partition assigned to a meta-cluster
+%     optimal_k = max(optimal_labels);
+% elseif 0
+%     n_subsamples = 50;
+%     subsample_ratio = 0.8;
+%     optimal_k = stability_based_k(S, Ks, n_subsamples, subsample_ratio);
+% 
+%     labels = spectral_clustering(S, 1:Ks);
+% 
+%     optimal_labels = labels(:, optimal_k);
+% else
+
+silhouette_scores = zeros(length(Ks), 1);
+
+labels = spectral_clustering(S, Ks, kmeans_repeats);
+
+for k1 = 1:length(Ks)
+    % k = ks(k1);
+    D = 1 - S;
+    D = D - diag(diag(D));
+    silhouette_scores(k1) = mean(silhouette([], labels(:, k1), squareform(D)));
+end
+
+[~, optimal_k1] = max(silhouette_scores);
+optimal_labels = labels(:,optimal_k1);
+optimal_K = Ks(optimal_k1);
+
+% end
+end
+
+function L_sym = construct_normalized_graph_Laplacian(S)
+
+D = diag(sum(S, 2)); % Degree matrix
+D_inv_sqrt = diag(1./sqrt(diag(D)));
+L_sym = eye(size(S)) - D_inv_sqrt * S * D_inv_sqrt; % Normalized Laplacian
+end
+
+function labels = spectral_clustering(S, Ks, kmeans_repeats)
+if nargin < 3
+    kmeans_repeats = 100;
+end
+
+% if 0
+%     labels = spectralcluster(S, k, 'Distance', 'precomputed', 'Similarity', 'precomputed');
+% elseif 0
+%     [V, ~] = eig(S);
+%     V = V(:, 1:k);
+%     Z = linkage(V, 'ward');
+%     labels = cluster(Z, 'MaxClust', k);
+% elseif 1
+
+S = (S + S')/2;
+
+% ARI could have negative values
+S(S < 0) = 0;
+
+% Step 1: Compute normalized Laplacian
+
+L_sym = construct_normalized_graph_Laplacian(S);
+
+
+% Step 2: Compute eigenvectors
+
+[V1, eig_val] = eigs(L_sym, max(Ks), 'smallestreal');
+
+
+if isempty(Ks) % determine k by eigen-gap
+    gaps = eig_val(2:end) - eig_val(1:end-1); % Compute gaps
+    [~, Ks] = max(gaps(2:end)); % Ignore first gap (i=1)
+end
+
+labels = zeros(size(V1,1), length(Ks));
+
+% Vs = {};
+
+for k1 = 1:length(Ks)
+    K = Ks(k1);
+    V = V1(:, 1:K);
+
+    % Step 3: Normalize rows (critical for k-means)
+    V = normr(V); % Normalize each row to unit length
+
+    % Step 4: Cluster rows of V
+    % rng(42); % For reproducibility
+
+    labels(:, k1) = kmeans(V, K, 'Replicates', kmeans_repeats);
+%     Vs{k1} = V;
+end
+
+% Z = linkage(V, 'average', 'euclidean');
+% labels = cluster(Z, 'MaxClust', k); % Force k clusters
+
+% else
+%     n_runs = 10;
+%     all_labels = zeros(size(S, 1), n_runs);
+%     for i = 1:n_runs
+%         all_labels(:, i) = spectralcluster(S, k, 'Distance', 'precomputed', 'Similarity', 'precomputed');
+%     end
+%     labels = mode(all_labels, 2); % Majority vote
+% end
+
+end
+
+
+%% obsolete
+
+function ncc = normalized_cluster_consistency(meta_cluster_partitions)
+    % meta_cluster_partitions: [n_points × n_partitions] matrix
+    [n_points, n_partitions] = size(meta_cluster_partitions);
+    cooccurrence = zeros(n_points);
+    
+    for i = 1:n_partitions
+        % Create binary matrix of shared clusters
+        shared = bsxfun(@eq, meta_cluster_partitions(:,i), meta_cluster_partitions(:,i)');
+        cooccurrence = cooccurrence + shared;
+    end
+    
+    ncc = mean(cooccurrence(:)) / n_partitions; % Normalize
+end
+
+function k_opt = stability_based_k(ari_matrix, max_k, n_subsamples, subsample_ratio)
+% Inputs:
+%   ari_matrix:      ARI similarity matrix (n_partitions × n_partitions)
+%   max_k:           Maximum k to test (e.g., 10)
+%   n_subsamples:    Number of subsampling iterations (e.g., 50)
+%   subsample_ratio: Fraction of partitions to subsample (e.g., 0.8)
+%
+% Output:
+%   k_opt: Optimal number of meta-clusters
+
+n_partitions = size(ari_matrix, 1);
+stability_scores = zeros(max_k, 1);
+
+for k = 2:max_k
+    agreements = zeros(n_subsamples, 1);
+
+    labels_full = spectral_clustering(ari_matrix, k, 10);
+
+    for i = 1:n_subsamples
+        % Subsample partitions
+        subsample_idx = randperm(n_partitions, floor(subsample_ratio * n_partitions));
+        ari_subsample = ari_matrix(subsample_idx, subsample_idx);
+
+        % Cluster subsample and full data
+        labels_subsample = spectral_clustering(ari_subsample, k, 10);
+
+        % Compare subsample vs. full labels (for overlapping partitions)
+        agreements(i) = rand_index(labels_subsample, labels_full(subsample_idx));
+    end
+
+    stability_scores(k) = mean(agreements);
+end
+
+% Plot stability scores
+% figure;
+% plot(2:max_k, stability_scores(2:end), '-o');
+% xlabel('Number of meta-clusters (k)');
+% ylabel('Stability (Mean ARI)');
+% title('Cluster Stability vs. k');
+
+% Optimal k: Max stability
+[~, k_opt] = max(stability_scores);
+end
+
+function [bes_ep,max_sim] = select_by_cooccurence_matrix(subtype)
+nsubtype = length(unique(subtype(:)));
+
+n_partition = size(subtype,2);
+
+cooccurence = zeros(size(subtype,1));
+
+for i = 1:n_partition
+    cooccurence = cooccurence + double(subtype(:,i) == subtype(:,i)');
+end
+
+cooccurence = cooccurence / n_partition;
+
+cooccurence = cooccurence - diag(diag(cooccurence));
+labels = spectral_clustering(cooccurence, nsubtype);
+
+[max_sim, bes_ep] = select_closest_partition(subtype, labels);
+
+end

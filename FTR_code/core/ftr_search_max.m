@@ -1,0 +1,606 @@
+function [s,f] = ftr_search_max(X, rec_pts, sigma, options)
+% Input:
+%   sigma - standard deviation of the noise
+if nargin < 4
+    options = [];
+end
+
+
+use_min_max_est_f_max = 0;
+if use_min_max_est_f_max
+    [s_est,f_est] = ftr_min_max(X, rec_pts, sigma, 0, max(X), options);
+    f_max_est = max(f_est);
+    options.f_max_est = f_max_est;
+end
+options.use_min_max_est_f_max = use_min_max_est_f_max;
+    
+[F_y,F_x] = ecdf(X);
+
+if sigma == 0
+    % take the inverse
+    s = linspace(0, 1, rec_pts);
+    f = interp1(F_y, F_x, s);
+    return;
+end
+F_x = F_x(2:end);
+F_y = F_y(2:end);
+% [xs, s1] = deconvolution_with_min0_unknown_max_no_search(F_x, F_y, sigma);
+[xs, s1] = deconvolution_with_min0_unknown_max_search_l1(F_x, F_y, sigma, options);
+
+s = linspace(0, 1, rec_pts);
+f = interp1(s1, xs, s);
+
+end
+
+function [xs, s1] = deconvolution_with_min0_unknown_max_search_l1(F_x, F_y, sigma, options)
+
+
+
+x_min = min(F_x);
+x_max = max(F_x);
+
+% use less points for deconvolution. This is a tentative size. The actual
+% n, i.e. the number of discretized points for the CDF, is slightly bigger
+% than this n1. 
+% n1 will also be used later to get the inverse of the estimated, i.e. the
+% trajectory 
+n1 = 101;
+% n1 = 21;
+
+% sigma can be at most (xmax - xmin)/6 since for a constant trajectory, the
+% gaussian ranges from (-3*sigma, 3*sigma)
+% sigma = min(sigma, (x_max - x_min)/6);
+
+% It is common that x_min < 0. To avoid sigma being too large, we can use 
+% the fact that 3*sigma <= 0-x_min.
+% if x_min < 0
+%     sigma = min(sigma, (0 - x_min)/3);
+% end
+
+% Create a template Laplacian matrix. It will be truncated to the proper
+% size later
+L1 = calc_Laplacian_1d(ones(1, n1-1));
+L1 = L1(2:end-1,:);
+
+%% TODO: the start is hardcoded to be 0
+if x_max > 0
+    xs = linspace(0, x_max, n1);
+else
+    % if all the points are negative, i.e. max(X) <= 0, the trajectory must
+    % be flat
+    xs = [0, 1e-4];
+    s1 = [0, 1];
+    return;
+end
+
+delta_x = xs(2) - xs(1);
+[PSF_y, ~] = create_gaussian_psf(delta_x, sigma);
+l = floor(length(PSF_y) / 2);
+
+% construct Fy for deconvolution. Since the minimum is 0, use only l points
+% for the parts of the CDF less than 0
+Fx_left = delta_x * (-l+1:0) + xs(1);
+Fx_right = xs(2:end);
+Fx = [Fx_left, Fx_right];
+Fy = interp1(F_x, F_y, Fx, 'linear', NaN);
+
+% n is the length of the discretized CDF
+n = length(Fy);
+
+% set the outside points to 0 or 1 based on whether the points are on the
+% left side or the right side. Since Fx cannot go beyond xmax, only the
+% left side can be nan.
+Fy(isnan(Fy)) = 0;
+l0 = 2*l;
+
+% create the kernel and b. 
+K = zeros(n, n+2*l);
+for i = 1:n
+    K(i, i-1 + (1:2*l+1)) = PSF_y;
+end
+
+%tic
+
+% lambda's are searched in a grid to minimize the MADs of 10000 
+% randomly generated trajectories
+lambda = parse_param(options, 'lambda', 20);
+% mu = parse_param(options, 'mu', 0);
+lambda2 = parse_param(options, 'lambda2', 0.02);
+
+scale_lambdas = parse_param(options, 'scale_lambdas', 0);
+
+if options.use_min_max_est_f_max
+    l1_curr = round((x_max - options.f_max_est) / delta_x) + l;
+else
+    l1_curr = 2*l;
+end
+
+params.use_min_max_est_f_max = options.use_min_max_est_f_max;
+
+params.K = K;
+params.l0 = l0;
+params.L1 = L1;
+params.Fy = Fy;
+params.Fx = Fx;
+params.n = n;
+params.n1 = n1;
+params.l = l;
+params.l1_curr = l1_curr;
+params.lambda = lambda;
+% params.mu = mu;
+params.lambda2 = lambda2;
+params.scale_lambdas = scale_lambdas;
+
+% [l1, l1s, obj_vals, ss, Fy_recons, best_ind] = search_for_l1(K, l0, L1, Fy, n, l, lambda, mu);
+[l1, l1s, obj_vals, ss, Fy_recons, best_ind] = search_for_l1_with_step(params);
+% [l1, l1s, obj_vals, ss, Fy_recons, best_ind] = search_for_l1_hierarchically(params);
+
+if 0 % visualize for debugging search
+    figure;
+    subplot(1,2,1);
+    h_cdf = plot(Fx, Fy, '-b');
+    hold on;
+    h_psf = plot(-l*delta_x:delta_x:l*delta_x, PSF_y, 'g');
+    
+    for i = 1:length(l1s)
+        if i == best_ind
+            linestyle = '-r';
+        else
+            linestyle = '--r';
+        end
+        h_ss(i) = plot(Fx(l0-l:end-l1s(i)+l+1), [0,ss{i}',1], linestyle);
+    end
+    legend([h_cdf,h_psf,h_ss(1),h_ss(best_ind)],{'CDF','Noise density','Candidate s','Optimal s'});
+    xlabel('x');
+
+    subplot(1,2,2);
+    h_cdf = plot(Fx, Fy, '-b');
+    hold on;
+    h_psf = plot(-l*delta_x:delta_x:l*delta_x, PSF_y, 'g');
+    
+    for i = 1:length(l1s)
+        if i == best_ind
+            linestyle = '-r';
+        else
+            linestyle = '--r';
+        end
+        h_ss(i) = plot(Fx, Fy_recons{i}, linestyle);
+    end
+    legend([h_cdf,h_psf,h_ss(1),h_ss(best_ind)], ...
+        {'CDF','Noise density','Candidate F_j (recon)','Optimal F_j (recon)'});
+    xlabel('x');
+end
+
+%toc
+
+%l1 = l0;
+
+%tic
+
+
+s1 = calc_s(params, l1);
+
+%toc
+
+s1 = [0, s1', 1];
+
+xs = Fx(l0-l+1:end-l1+l);
+xs = [Fx(l0-l), xs, Fx(end-l1+l+1)];
+
+end
+
+%% searching strategy
+
+function [l1, l1s, obj_vals, ss, Fy_recons, best_ind] = search_for_l1_with_step(params)
+l = params.l;
+n = params.n;
+l0 = params.l0;
+
+l1_curr = params.l1_curr;
+    
+% l1 is in the range (l+1, n+2l-l0-3). The minimum is determined by the fact
+% that Fx(end-l1+l+1) is the searched maximum. When l1 = l+1, the maximum
+% is Fx(end), i.e. the maximum in the samples.
+l1_min = l+1;
+
+% The maximum is determined by the fact
+% that the size of s is m = n+2l-l0-l1 and m >= 3 (from the 
+% Laplacian constraint). Hence, we have l1 <= n+2l-l0-3.
+l1_max = n+2*l-l0-3;
+
+obj_vals = NaN(1, l1_max - l1_min + 1);
+ss = cell(1, length(obj_vals));
+Fy_recons = cell(1, length(obj_vals));
+
+l1_curr = min(max(l1_curr, l1_min), l1_max); % start at 2l which should be less than l1_max
+
+if ~params.use_min_max_est_f_max
+    % coarse search
+    step = ceil(l/3); % ceil(sigma/delta_x)
+    [l1_curr, obj_vals, ss, Fy_recons] = search_for_l1_loop(params, ...
+        l1_min, l1_max, step, l1_curr, obj_vals, ss, Fy_recons);
+end
+
+% fine search
+step = ceil(l/30); 
+[l1_curr, obj_vals, ss, Fy_recons] = search_for_l1_loop(params, ...
+    l1_min, l1_max, step, l1_curr, obj_vals, ss, Fy_recons);
+
+valid_inds = ~isnan(obj_vals);
+l1s = find(valid_inds) + l1_min - 1;
+obj_vals = obj_vals(valid_inds);
+ss = ss(valid_inds);
+Fy_recons = Fy_recons(valid_inds);
+l1 = l1_curr;
+
+best_ind = find(l1s == l1);
+
+end
+
+function [l1_curr, obj_vals, ss, Fy_recons] = search_for_l1_loop(params, ...
+    l1_min, l1_max, step, l1_curr, obj_vals, ss, Fy_recons)
+
+while 1
+    [obj_val_curr, obj_vals, ss, Fy_recons] = get_obj_val_by_l1(params, ...
+        l1_curr, l1_min, ...
+        obj_vals, ss, Fy_recons);
+
+    l1_right = min(l1_curr + step, l1_max);
+    [obj_val_right, obj_vals, ss, Fy_recons] = get_obj_val_by_l1(params, ...
+        l1_right, l1_min, ...
+        obj_vals, ss, Fy_recons);
+
+    l1_left = max(l1_curr - step, l1_min);
+    [obj_val_left, obj_vals, ss, Fy_recons] = get_obj_val_by_l1(params, ...
+        l1_left, l1_min, ...
+        obj_vals, ss, Fy_recons);
+
+    if obj_val_curr <= obj_val_left && obj_val_curr <= obj_val_right
+        break;
+    else
+        if obj_val_left < obj_val_right
+            l1_curr = l1_left;
+        else
+            l1_curr = l1_right;
+        end
+    end
+
+end
+
+end
+
+function [obj_val, obj_vals, ss, Fy_recons] = get_obj_val_by_l1(params, ...
+    l1_curr, l1_min, ...
+    obj_vals, ss, Fy_recons)
+if isnan(obj_vals(l1_curr - l1_min + 1)) % current value not evaluated yet
+    [obj_val, extra] = eval_obj_fun(params, l1_curr);
+    obj_vals(l1_curr - l1_min + 1) = obj_val;
+    ss{l1_curr - l1_min + 1} = extra.s;
+    Fy_recons{l1_curr - l1_min + 1} = extra.Fy_recon;
+else
+    obj_val = obj_vals(l1_curr - l1_min + 1);
+end
+
+end
+
+%% The hyperparameters are used here
+
+function [obj_val, extra] = eval_obj_fun(params, l1)
+
+[s, A, b, L, s0, Fy_recon] = calc_s(params, l1);
+
+extra = [];
+extra.s = s;
+extra.Fy_recon = Fy_recon;
+
+lambda2 = params.lambda2;
+L1 = params.L1;
+n = params.n;
+
+% objective
+f = get_recon_traj(params, l1, s);
+m = length(f);
+
+% since the regularization term has a sum of m-2 elements while the
+% deconvolution term has n elements, lambda2 is rescaled
+if params.scale_lambdas
+    lambda2 = lambda2 * (n/(m-2));
+end
+
+obj_val1 = sum((A*s - b).^2);
+% obj_val2 = lambda * sum((L*s).^2);
+% obj_val3 = mu * sum((s-s0).^2);
+% obj_val = obj_val1 + obj_val2 + obj_val3;
+obj_val2 = lambda2 * sum((L1*f).^2);
+obj_val = obj_val1 + obj_val2;
+
+extra.obj_val1 = obj_val1;
+extra.obj_val2 = obj_val2;
+% extra.obj_val3 = obj_val3;
+
+% obj_val = sum((A*s - b).^2);
+end
+
+function [f,s] = get_recon_traj(params, l1, s)
+Fx = params.Fx;
+l0 = params.l0;
+l = params.l;
+n = params.n;
+n1 = params.n1;
+
+% pad left (0,0) and right (xmax, 1) 
+s1 = [0, s', 1];
+
+xs = Fx(l0-l+1:end-l1+l);
+xs = [Fx(l0-l), xs, Fx(end-l1+l+1)];
+
+% take inverse
+% m = n+2*l-l0-l1;
+s = linspace(0, 1, n1)';
+f = interp1(s1, xs, s);
+
+end
+
+function [s, A, b, L, s0, Fy_recon] = calc_s(params, l1)
+
+K = params.K;
+L1 = params.L1;
+Fy = params.Fy;
+n = params.n;
+l = params.l;
+l0 = params.l0;
+lambda = params.lambda;
+% mu = params.mu;
+
+K2 = K(:,l0+1:end-l1);
+K3 = K(:,end-l1+1:end);
+b = Fy' - K3*ones(l1,1);
+A = K2;
+
+% create L
+m = n+2*l-l0-l1;
+
+% since the regularization term has a sum of m-2 elements while the
+% deconvolution term has n elements, lambda is rescaled
+if params.scale_lambdas
+    lambda = lambda * (n/(m-2));
+end
+
+% L = L1(1:m,1:m+2);
+% C = eye(m);
+% C(1,1) = 0;
+% C(end,end) = 0;
+% L = C*L;
+% 
+% L12 = L(1,2:end-1);
+% L22 = L(2:end-1,2:end-1);
+% L32 = L(end,2:end-1);
+% L1L = L12'*L12 + L22'*L22 + L32'*L32;
+
+L = L1(1:m-2,1:m);
+L1L = L'*L;
+
+%% fmincon/quadprog optimization
+D = create_difference(m);
+
+% Make the next point always slightly greater than the current point so
+% that taking the inverse function using interpolation will not pop up an
+% error.
+c = -0.0001*ones(m-1,1);
+options = optimoptions('quadprog','Display','off');
+
+s0 = Fy(l+1:n+l-l1)'; % initialize using the truncated CDF
+% s0 = []; % initialize with the preset method in quadprog
+
+% Bound it between 1e-4 and 1-1e-4 such that the first point in s is always
+% greater than 0 and the last point in s is always less than 1
+
+s = quadprog(A'*A + lambda*(L1L), -A'*b, D,c,[],[],0.0001*ones(m,1),0.9999*ones(m,1),s0,options);
+% s = quadprog(A'*A + lambda*(L1L) + mu*eye(m), -A'*b-mu*s0,D,c,[],[],0.0001*ones(m,1),0.9999*ones(m,1),s0,options);
+% s = quadprog(A'*A + lambda*(L1L),-A'*b + lambda*L32',D,c,[],[],1e-9*ones(m,1),(1-1e-9)*ones(m,1),s0,options);
+
+Fy_recon = K2*s + K3*ones(l1,1);
+end
+
+function D = create_difference(n)
+D = zeros(n-1,n);
+for i = 1:n-1
+    D(i,i) = 1;
+    D(i,i+1) = -1;
+end
+end
+
+
+
+%% obsolete
+
+function [l1, l1s, obj_vals, ss, Fy_recons, best_ind] = search_for_l1( ...
+    K, l0, L1, Fy, n, l, lambda, mu)
+% search for l1 in the range (l, 3l). Ideally, l1 = 2l. 
+
+% Note that the size of s is m = n+2l-l0-l1. Since m >= 3 (from the 
+% Laplacian constraint), we have l1 <= n+2l-l0-3.
+l1_upper_bd = min(3*l,n+2*l-l0-3);
+
+% in case n+2l-l0 is too small, it should be at least l+2
+% YZ: I changed 5 discretized points to 11 and put a 'unique' afterwards.
+lins = linspace(l+1,max(l1_upper_bd,l+2),11);
+l1s = unique(round(lins));
+
+% originally, it is set to try all possible discretized points
+%l1s = [l+1:max(t,l+2)]; 
+
+obj_vals = zeros(1, length(l1s));
+ss = cell(1, length(l1s));
+Fy_recons = cell(1, length(l1s));
+for idx = 1:length(l1s)
+    l1 = l1s(idx);
+    [obj_val, extra] = eval_obj_fun(K, L1, Fy, n, l, l0, l1, lambda, mu);    
+    obj_vals(idx) = obj_val;
+    ss{idx} = extra.s;
+    Fy_recons{idx} = extra.Fy_recon;
+    obj_val1s(idx) = extra.obj_val1;
+    obj_val2s(idx) = extra.obj_val2;
+    obj_val3s(idx) = extra.obj_val3;
+end
+[~, best_ind] = min(obj_vals);
+l1 = l1s(best_ind);
+end
+
+
+function [l1, l1s, obj_vals, ss, Fy_recons, best_ind] = search_for_l1_hierarchically(params)
+l = params.l;
+n = params.n;
+l0 = params.l0;
+    
+% l1 is in the range (l+1, n+2l-l0-3). The minimum is determined by the fact
+% that Fx(end-l1+l+1) is the searched maximum. When l1 = l+1, the maximum
+% is Fx(end), i.e. the maximum in the samples.
+l1_min = l+1;
+
+% The maximum is determined by the fact
+% that the size of s is m = n+2l-l0-l1 and m >= 3 (from the 
+% Laplacian constraint). Hence, we have l1 <= n+2l-l0-3.
+l1_max = n+2*l-l0-3;
+
+obj_vals = NaN(1, l1_max - l1_min + 1);
+ss = cell(1, length(obj_vals));
+Fy_recons = cell(1, length(obj_vals));
+
+% coarse search
+num_search_pts = 11;
+l1_search_range = unique(round(linspace(l1_min, l1_max, num_search_pts)));
+[l1_curr, obj_vals, ss, Fy_recons] = search_for_l1_in_range(params, ...
+    l1_min, l1_search_range, obj_vals, ss, Fy_recons);
+
+% fine search
+
+% keep searched points
+valid_inds = ~isnan(obj_vals);
+l1s = find(valid_inds) + l1_min - 1;
+obj_vals = obj_vals(valid_inds);
+ss = ss(valid_inds);
+Fy_recons = Fy_recons(valid_inds);
+l1 = l1_curr;
+
+best_ind = find(l1s == l1);
+
+end
+
+
+function [l1_curr, obj_vals, ss, Fy_recons] = search_for_l1_in_range(params, ...
+    l1_min, l1_search_range, obj_vals, ss, Fy_recons)
+
+obj_vals_in_range = zeros(size(l1_search_range));
+
+for i = 1:length(l1_search_range)
+    l1_curr = l1_search_range(i);
+    [obj_val_curr, obj_vals, ss, Fy_recons] = get_obj_val_by_l1(params, ...
+        l1_curr, l1_min, ...
+        obj_vals, ss, Fy_recons);
+    obj_vals_in_range(i) = obj_val_curr;
+end
+
+[~, ind_min] = min(obj_vals_in_range);
+l1_curr = l1_search_range(ind_min);
+
+end
+
+% 
+% function [xs, s1] = deconvolution_with_min0_unknown_max_no_search(F_x, F_y, sigma)
+% lambda = 20;
+% 
+% q1 = F_x(find(F_y > 0.25, 1)); % quantile(X, 0.25)
+% q3 = F_x(find(F_y > 0.75, 1)); % quantile(X, 0.75)
+% 
+% x_min = min(F_x);
+% x_max = max(F_x);
+% 
+% % x_max2 = q3 + 1.5*(q3-q1);
+% 
+% % x_max = max(x_max, x_max2);
+% 
+% % use less points for deconvolution. This is a tentative size. The actual
+% % n, i.e. the number of discretized points for the CDF, is bigger
+% % than this n1.
+% n1 = 100;
+% 
+% % sigma can be at most (xmax - xmin)/6 since for a constant trajectory, the
+% % gaussian ranges from (-3*sigma, 3*sigma)
+% sigma = min(sigma, (x_max - x_min)/6);
+% 
+% % determine the resolution of discretization
+% delta_x = (q3-q1)/(n1/2);
+% [PSF_y, ~] = create_gaussian_psf(delta_x, sigma);
+% l = floor(length(PSF_y) / 2);
+% 
+% % construct Fy for deconvolution. Since the minimum is 0, use only l points
+% % for the parts of the CDF less than 0
+% Fx = delta_x*(-l+1):delta_x:x_max;
+% Fy = interp1(F_x, F_y, Fx, 'linear', NaN);
+% 
+% % set the outside points to 0 or 1 based on whether the points are on the
+% % left side or the right side. Since Fx cannot go beyond xmax, only the
+% % left side can be nan.
+% Fy(isnan(Fy)) = 0;
+% % Fy(isnan(Fy) & Fx > 0) = 1;
+% 
+% % n is the length of the discretized CDF
+% n = length(Fy);
+% 
+% % Create a template Laplacian matrix. It will be truncated to the proper
+% % size later
+% L1 = calc_Laplacian_1d(ones(1, n-1));
+% L1 = L1(2:end-1,:);
+% 
+% l0 = 2*l;
+% % l1 is at least greater than 2l. Set it to be 2l and then trim the
+% % resulting s later
+% l1 = 2*l;
+% 
+% % create the kernel and b. 
+% K = zeros(n, n+2*l);
+% for i = 1:n
+%     K(i, i-1 + (1:2*l+1)) = PSF_y;
+% end
+% 
+% 
+% [s1, A, b, L, lambda, Fy_recon] = calc_s(K, L1, Fy, n, l, l0, l1, lambda);
+% 
+% xs = Fx(l0-l+1:end-l1+l);
+% 
+% % assume s1 > 0.99 to be the values that fall into the l1 range. Hence the
+% % maximum value can be determined by removing the values in xs
+% xs(s1 > 0.99) = [];
+% s1(s1 > 0.99) = [];
+% 
+% xs = [xs(1)-delta_x, xs, xs(end)+delta_x];
+% s1 = [0, s1', 1];
+% 
+% 
+% if 0 % visualize for debugging search
+%     figure;
+%     subplot(1,2,1);
+% 
+%     h_cdf = plot(Fx, Fy, '-b');
+%     hold on;
+%     h_psf = plot(-l*delta_x:delta_x:l*delta_x, PSF_y, 'g');
+%     
+%     h_s = plot(xs, s1, '--r');
+%     
+%     legend([h_cdf,h_psf,h_s],{'CDF','Noise density','Optimal s'});
+%     xlabel('x');
+% 
+%     subplot(1,2,2);
+%     h_cdf = plot(Fx, Fy, '-b');
+%     hold on;
+%     h_psf = plot(-l*delta_x:delta_x:l*delta_x, PSF_y, 'g');
+%     
+%     h_s = plot(Fx, Fy_recon, '--r');
+% 
+%     legend([h_cdf,h_psf,h_s], ...
+%         {'CDF','Noise density','Optimal F_j (recon)'});
+%     xlabel('x');
+% end
+% 
+% end

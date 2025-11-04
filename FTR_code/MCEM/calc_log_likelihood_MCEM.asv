@@ -1,0 +1,13 @@
+function [loglik, sbtyp_nor, stage_nor] = calc_log_likelihood_MCEM(dat, PTID, traj, proption, sgm)
+[loglik, log_pdf, log_int, log_int_grouped] = cal_loglik(dat, PTID, traj,proption,sgm);
+
+nsubj = size(log_int_grouped, 1);
+
+loglik_sbtyp = exp(log_int_grouped-max(log_int_grouped,[],2)).*repmat(proption',nsubj,1);
+sbtyp_nor = loglik_sbtyp./sum(loglik_sbtyp,2);
+
+ndata_pt = 
+
+loglik_stage = exp(log_pdf-max(log_pdf,[],2));
+stage_nor = loglik_stage./sum(loglik_stage,2);
+end

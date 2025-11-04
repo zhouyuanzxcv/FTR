@@ -1,0 +1,206 @@
+function [traj,re_traj,subtype,stage,sgm,loglik,proption,extra] = MCEM_subtype(dat,PTID,nsubtype,pre_subtype,pre_sgm,options)
+
+max_iter = options.max_iter;
+num_int = options.num_int;
+
+options.filter = parse_param(options, 'filter', 1);
+
+[nsamp, nbiom] = size(dat);
+
+samp_multi = parse_param(options, 'samp_multi', 100);
+
+Ts = calc_Ts(PTID);
+
+nsubj = length(Ts);
+
+biom_max = parse_param(options, 'biom_max', []);
+if isempty(biom_max)
+    biom_max = max(dat, [], 1);
+end
+
+if numel(biom_max) == 1
+    biom_max = repmat(biom_max, 1, size(dat, 2));
+end
+
+%% Initialize
+
+subtype_samp = zeros(samp_multi, nsamp); % L x nsamp
+
+if size(pre_subtype, 1) == nsamp % use predefined subtypes
+    if size(pre_subtype, 2) == 1
+        pre_subtype = repmat(pre_subtype, 1, samp_multi);
+    end
+    subtype = pre_subtype;
+    for l = 1:samp_multi
+        subtype_samp(l,:) = subtype(:,l)';
+    end
+else % randomly initialize
+    for l = 1:samp_multi
+        subtype = init_subtype(nsubj, nsubtype, dat, PTID, options);
+        subtype_samp(l,:) = subtype';
+    end
+end
+
+subtype_samp1 = reshape(subtype_samp, samp_multi*nsamp, 1);
+
+
+if ismatrix(pre_sgm) && size(pre_sgm,2) == nsubtype 
+    sgm = pre_sgm;
+else
+    sigma_init = parse_param(options, 'sigma_init', 1);
+    switch options.sigma_type
+        case {'1xK','1x1'}
+            sgm = ones(1, nsubtype) * sigma_init;
+        case 'BxK'
+            sgm = ones(nbiom, nsubtype) * sigma_init;
+    end
+end
+
+%% prepare EM iteration
+
+traj = zeros(nbiom,num_int,nsubtype);
+
+loglik_all = zeros(max_iter,1);
+%traj_last = zeros(max_iter,nbiom,nsubtype);
+subtype_all = zeros(nsamp, max_iter);
+
+
+proptions = zeros(samp_multi, nsubtype);
+
+dat_samp(1,:,:) = dat;
+dat_samp = repmat(dat_samp, samp_multi, 1, 1); % L x nsamp x B
+dat_samp1 = reshape(dat_samp, samp_multi*nsamp, nbiom);
+residues1 = zeros(size(dat_samp1));
+
+stage_samp = zeros(samp_multi, nsamp); % L x nsamp
+
+% lambdas = parse_param(options, 'lambda_starts', 10*ones(1,nsubtype));
+
+
+for iter = 1:max_iter
+    %% update f    
+%     for j = 1:nbiom
+    for k = 1:nsubtype
+%         options.lambda_start = lambdas(k);
+
+        dat_sub = dat_samp1(subtype_samp1 == k, :);
+        if ~options.filter
+%             [s,f,lambdas(k)] = ftr_base(dat_sub, num_int, 0);
+            [s,f] = ftr_base(dat_sub, num_int, 0);
+        else
+            switch options.sigma_type
+                case {'1xK','1x1'}
+                    sgm1 = sgm(k);
+                case 'BxK'
+                    sgm1 = sgm(:,k);
+            end
+    
+%             [s,f,lambdas(k)] = ftr_base(dat_sub, num_int, sgm1, 0, biom_max, options);
+            [s,f] = ftr_base(dat_sub, num_int, sgm1, 0, biom_max, options);
+        end
+        traj(:,:,k) = f;
+    end
+%     end
+    
+    %% reparameterize f
+    re_traj = traj;
+    for k = 1:nsubtype
+        traj_k = re_traj(:,:,k);
+        re_traj(:,:,k) = reparam_traj(traj_k', size(traj,2), options)';
+    end
+    traj = re_traj;
+
+    %% update pi
+    for l = 1:samp_multi
+        proptions(l,:) = subtype_samp2proportion(subtype_samp(l,:)', PTID, nsubtype);
+    end
+    proption = mean(proptions, 1)';
+    if any(proption == 0) % one cluster becomes empty
+        break;
+    end
+
+    
+    %% calculate loglikelihood
+    [loglik, sbtyp_nor, stage_nor] = calc_log_likelihood_MCEM( ...
+        dat, PTID, traj, proption, sgm);
+    
+    loglik_all(iter) = loglik;
+    
+    %% sample z
+    subtype_samp = sample_categorical(sbtyp_nor, samp_multi)';
+    subtype_samp = repelem(subtype_samp, 1, Ts, 1); % L x nsamp
+    subtype_samp1 = reshape(subtype_samp, samp_multi*nsamp, 1);
+
+    [~, subtype_best] = max(sbtyp_nor, [], 2);
+    subtype_best = repelem(subtype_best, Ts, 1);
+    subtype_all(:, iter) = subtype_best;
+    
+    %% sample s
+    stage_prob = get_stage_prob_from_subtype(stage_nor, subtype_samp);
+    
+    for l = 1:samp_multi
+        stage_samp(l,:) = sample_categorical(stage_prob(:,:,l), 1)';
+    end
+    
+    stage_samp1 = reshape(stage_samp, samp_multi*nsamp, 1);
+       
+    %% update Sigma
+
+    for k = 1:nsubtype
+        fitted_k = traj(:,stage_samp1(subtype_samp1 == k),k)';
+        data_k = dat_samp1(subtype_samp1 == k, :);
+        residues1(subtype_samp1 == k,:) = fitted_k - data_k;
+        
+        switch options.sigma_type
+            case '1xK'
+                sgm(:,k) = sqrt(mean((fitted_k(:) - data_k(:)).^2, 1));
+            case 'BxK'
+                sgm(:,k) = sqrt(mean((fitted_k - data_k).^2, 1));
+        end
+    end
+    
+    if strcmp(options.sigma_type, '1x1')
+        sgm = sqrt(mean(residues1(:).^2));
+        sgm = repmat(sgm, 1, nsubtype);
+    end
+
+    %% stop if converged
+    % if iter > 10 && all(all(subtype_all(:,iter-4:iter) == subtype_all(:, iter-5:iter-1)))
+    %     subtype_all(:,iter+1:end) = repmat(subtype_all(:,iter), 1, max_iter - iter);
+    %     loglik_all(iter+1:end) = repmat(loglik_all(iter), max_iter - iter, 1);
+    %     break;
+    % end
+
+    %traj_last(iter,:,:) =  re_traj(:,num_int,:);
+%     loglik = loglik_all(iter);
+
+end
+
+
+%% output
+% if 0 % visualize the results
+%     show_trajectory_in_PCA(dat, subtype_samp(1,:)', traj);
+% end
+
+% Reparametrization
+re_traj = zeros(nbiom,num_int,nsubtype);
+for k = 1:nsubtype
+%     max_stage_pos = max(stage(subtype == k)) * (num_int - 1) + 1;
+    traj_k = traj(:,:,k);
+%     traj_k = reparam_traj(traj_k')';
+    re_traj(:,:,k) = traj_k;
+end
+
+if any(proption == 0) % one cluster becomes empty
+    stage = NaN(nsamp,1);
+    subtype = NaN(nsamp, 1);
+    extra = [];
+else
+    [stage,subtype,extra] = cal_stage_subtype_MCEM(dat,PTID,traj,proption,sgm,Ts);
+end
+
+extra.loglik_all = loglik_all;
+extra.subtype_all = subtype_all;
+% extra.lambdas = lambdas;
+end
+
