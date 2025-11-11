@@ -127,7 +127,7 @@ We can also run the algorithm to regenerate the trajectory and subtype/stage res
    run_demo_single(1, 'arbitrary');
    ```
 
-2. To run FTR on ADNI/OASIS/NACC (it may take hours on ADNI and several minutes on OASIS/NACC), execute the following code for ADNI
+2. To run FTR on ADNI/OASIS/NACC (it may take hours on the full dimensional dataset), execute the following code for ADNI
    
    ```
    run_algo('ADNI_FSX_HS', 'FTR_MCEM');
