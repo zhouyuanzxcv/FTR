@@ -51,10 +51,6 @@ for varIdx = 1:length(variables)
     slopes_all_stages = compare_lmem(joindata, dependentVariable, ...
         independentVariables, nsubtype, data_sel_inds, ref_group);
     
-    %% plot progression rates distribution
-    figure;
-    boxplot_by_subtype_stage(slopes_all_stages, data_sel_names, 'MMSE decrease per year');
-    
 end
 
 end

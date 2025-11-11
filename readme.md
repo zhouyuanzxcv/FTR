@@ -77,7 +77,7 @@ addpath(genpath('analysis'));
 
 ## 2.1. Show the results
 
-To reproduce the figures from the saved results, use the functions in the 'analysis' folder with the specific number and letter in the postfix. For example, 
+To reproduce the figures from the saved results, first create a 'figures/all' folder under FTR-main, then use the functions in the 'analysis' folder with the specific number and letter in the postfix. For example, 
 
 1. To see the trajectories from FTR on all the datasets, execute
 
@@ -93,11 +93,15 @@ The results will be saved in './figures/all/S12_*'.
 compare_subtype_demo_T1;
 ```
 
+The table will be shown in the command window.
+
 3. To see that the subtypes have different progression rates of MMSE in the ADNI discovery set, execute
 
 ```
 compare_subtype_progression_3A;
 ```
+
+The figure will be saved as '3A.jpg' in './figures/all'.
 
 4. To see that the stages are associated with MMSE in the ADNI discovery set, execute
 
@@ -105,22 +109,39 @@ compare_subtype_progression_3A;
 analyze_stages_3C;
 ```
 
+The figure will be saved as '3C.jpg' in './figures/all'.
+
 ## 2.2. Run the algorithm
 
 We can also run the algorithm to regenerate the trajectory and subtype/stage results (it may take hours on the ADNI 82-region dataset). Or, we can just see how FTR recovers trajectory functions in the demo.
 
-1. To see that FTR can recover a sigmoid function or an arbitrary monotonically increasing function using just the CDF, execute the following code in the command window:
+1. To see that FTR can recover a sigmoid function or an arbitrary monotonically increasing function using just the CDF, execute the following code in the command window for the sigmoid function
    
    ```
    run_demo_single(1, 'sigmoid');
+   ```
+   
+   and for the arbitrary monotonically increasing function.
+   
+   ```
    run_demo_single(1, 'arbitrary');
    ```
 
-2. To run FTR on ADNI/OASIS/NACC (it may take hours on ADNI and several minutes on OASIS/NACC), execute:
+2. To run FTR on ADNI/OASIS/NACC (it may take hours on ADNI and several minutes on OASIS/NACC), execute the following code for ADNI
    
    ```
    run_algo('ADNI_FSX_HS', 'FTR_MCEM');
+   ```
+   
+   or OASIS
+   
+   ```
    run_algo('OASIS3_ROD1_HS', 'FTR_MCEM');
+   ```
+   
+   or NACC.
+   
+   ```
    run_algo('NACC_HS', 'FTR_MCEM');
    ```
 
