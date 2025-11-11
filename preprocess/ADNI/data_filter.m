@@ -121,6 +121,10 @@ myTable = renamevars(myTable, myTable.Properties.VariableNames(1:2), {'RID','yea
 % myTable(isnan(years), :) = [];
 % myTable = unique(myTable);
 
+if  ~exist('./Result/', 'dir')
+    mkdir('./Result/');
+end
+
 
 %% Output
 if mri_fsx

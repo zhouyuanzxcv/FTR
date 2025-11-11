@@ -1,0 +1,286 @@
+function [outputArg1,outputArg2] = compare_subtype_difference_2(inputArg1,inputArg2)
+%COMPARE_SUBTYPE_DEMO Summary of this function goes here
+%   Detailed explanation goes here
+
+close all
+data = {'ADNI_FSX_LM', 'ADNI_FSX_LS','ADNI_FSX_HM', 'ADNI_FSX_HS';
+    'OASIS3_ROD1_LM', 'OASIS3_ROD1_LS','OASIS3_ROD1_HM', 'OASIS3_ROD1_HS';
+    'NACC_LM', 'NACC_LS', 'NACC_HM', 'NACC_HS'};
+
+method = {'FTR_MCEM','sustain','hierarch_clustering_baseline','ctv_hv_ratio_baseline'};
+dataset_title = {'ADNI (AD+MCI)', 'ADNI (AD)', 'OASIS'};
+
+num_of_region = {'2','13','26','41','82'};
+num_of_region = repmat(num_of_region, 2, 1);
+num_of_region(3,:) = {'2','7','14','32','64'};
+
+ctv_hv_ratio_data_idx = 1;
+
+nsubtype = 3;
+
+num_runs = 5;
+
+crtype = 'RMSE';
+
+f = figure;
+f.Position = get_figure_position('fig51');
+for idx_dataset = 1:size(data,1)
+    subplot(size(data,1), 1, idx_dataset);
+
+    b_spacing_multiplier = 40;
+    c_spacing_multiplier = 170;
+    % method_colors = {[0 0.4470 0.7410], [0.8500 0.3250 0.0980], [0.9290 0.6940 0.1250], [0.4940 0.1840 0.5560], [0.4660 0.6740 0.1880], [0.3010 0.7450 0.9330]};
+    method_colors = {[0 0.4470 0.7410], [0.8500 0.3250 0.0980], [0.9290 0.6940 0.1250], [0.4940 0.1840 0.5560]};
+    method_shapes = {'o','square','diamond','v'};
+    hcbl = sprintf('Hierarchical\nClustering\n');
+    hcad = sprintf('Hierarchical\nClustering\n');
+    method_labels = {'FTR (MCEM)','SuStaIn','CTV-HV-Ratio',hcbl};
+
+    hold on;
+
+    handles = cell(1,length(method));
+
+    for include_control = [0,2]
+%         results = load_data_result(data(idx_dataset,:), method, nsubtype, include_control, 1);
+
+        results = cell(size(data,2), length(method), num_runs);
+        for idx_run = 1:num_runs
+
+            options = [];
+            options.postfix = ['_run',num2str(idx_run)];
+    
+            tmp = load_data_result(data(idx_dataset,:), method, nsubtype, ...
+                include_control, options);
+
+            results(:,:,idx_run) = tmp;
+        end
+
+    
+        
+        x_ticks = [];
+    
+        for dataIdx = 1:size(data,2)
+            for methodIdx = 1:length(method)
+                ftr_or_sustain = strcmp(method{methodIdx}, 'FTR_MCEM') || ...
+                        strcmp(method{methodIdx}, 'sustain');
+                if include_control == 2 && ~ftr_or_sustain
+                    continue;
+                end
+
+                if isempty(results{dataIdx, methodIdx})
+                    continue;
+                end
+
+                if strcmp(method{methodIdx}, 'ctv_hv_ratio_baseline') 
+                    if dataIdx == ctv_hv_ratio_data_idx
+                        x_value = -c_spacing_multiplier + b_spacing_multiplier;
+                    else
+                        continue;
+                    end
+                else
+%                     x_value = (dataIdx-1)*c_spacing_multiplier + (methodIdx-1)*b_spacing_multiplier;
+                    x_value = (dataIdx-1)*c_spacing_multiplier + b_spacing_multiplier;
+                end
+
+                if ftr_or_sustain % if ftr or sustain, use 5 runs
+                    num_runs1 = num_runs;
+                else % if not ftr or sustain, only 1 run is executed
+                    num_runs1 = 1;
+                end
+
+                y_values = nan(3, num_runs1);
+
+
+                for idx_run = 1:num_runs1
+                    joindata = results{dataIdx, methodIdx, idx_run}.joindata;
+                    dx_counts = [];
+                    for k = 1:nsubtype
+                        data_k = joindata(joindata.subtype == k, :);
+                        dx_counts(k,1) = length(find(data_k.diagnosis == 0));
+                        dx_counts(k,2) = length(find(data_k.diagnosis == 0.5));
+                        dx_counts(k,3) = length(find(data_k.diagnosis == 1));
+                    end
+
+                    y_value1 = [];
+                    for i = 1:size(dx_counts,1)-1
+                        for j = i+1:size(dx_counts,1)
+                            switch crtype
+                                case 'chi2test'
+                                    p = chi_square_test_for_group_difference([dx_counts(i, :); dx_counts(j, :)]);
+                                    y_value = log10(p);
+                                case 'RMSE'
+                                    y_value = cal_rmse(dx_counts(i, :), dx_counts(j, :));
+                                otherwise
+                            end
+                            
+                            y_value1 = cat(1, y_value1, y_value);
+                        end
+                    end
+
+                    % The differences need to be sorted because the subtype
+                    % order may differ per run
+                    y_value2 = sort(y_value1);
+                    y_values(:,idx_run) = y_value2;
+                end
+
+                for idx_point = 1:size(y_values,1)
+                    y_value_m = mean(y_values(idx_point, :), 'omitnan');
+                    y_value_std = std(y_values(idx_point, :), 'omitnan');
+    
+    
+    %                 h = plot(x_value, y_value, method_shapes{methodIdx}, 'Color', ...
+    %                     method_colors{methodIdx}, 'MarkerFaceColor', ...
+    %                     facecolor, 'MarkerEdgeColor', ...
+    %                     method_colors{methodIdx}, 'MarkerSize', 6, ...
+    %                     'linewidth', 1);
+    
+                    if include_control == 0
+                        facecolor = method_colors{methodIdx};
+                    elseif include_control == 2
+                        facecolor = 'none';
+                    end
+    
+                    h = errorbar(x_value, y_value_m, y_value_std, ...
+                        method_shapes{methodIdx}, ...
+                        "MarkerSize",5,...
+                        'linewidth', 1, 'color', method_colors{methodIdx}, ...
+                        "MarkerEdgeColor", method_colors{methodIdx}, ...
+                        "MarkerFaceColor", facecolor, ...
+                        'CapSize',0);
+    
+                    handles{methodIdx} = [handles{methodIdx}, h];
+                end
+
+                
+            end
+        x_ticks = [x_ticks, (dataIdx-1)*c_spacing_multiplier + b_spacing_multiplier];
+        end
+
+
+        x_ticks = [- c_spacing_multiplier + b_spacing_multiplier, x_ticks];
+        set(gca, 'xtick', x_ticks, 'xticklabel', num_of_region(idx_dataset,:));
+        set(gca, 'TickLabelInterpreter', 'none');
+        xlabel('Number of regions')
+        switch crtype
+            case 'chi2test'
+                ylabel('log_{10} p');
+                hLine = yline(log10(0.05), '--');
+                set(get(get(hLine, 'Annotation'), 'LegendInformation'), 'IconDisplayStyle', 'off');
+            case 'RMSE'
+                % if idx_dataset == 3
+                %     ylabel('Subtype difference in CDR distribution (RMSE)');
+                % else
+                %     ylabel('Subtype differoence in diagnosis distribution (RMSE)');
+                % end
+                %             if idx_dataset == 1
+                ylabel('RMSE');
+                %             end
+            otherwise
+        end
+        % title(data_title(p))
+    end
+
+    handles = [handles{:}];
+
+    % For debug
+    x_positions = arrayfun(@(h) h.XData, handles);
+    % for i = 1:length(handles), handles(i).XData = x_positions(i); end
+    handles = jitter_overlap1(handles, b_spacing_multiplier*0.9);
+    
+    xlim([-40-c_spacing_multiplier (size(data,2)-1)*c_spacing_multiplier + (length(method)-1)*b_spacing_multiplier + 40])
+
+    [x_max, y_max, x_min, y_min] = get_errorbars_maximum(handles);
+    ylim([0, y_max]);
+
+    set(gca, 'TickLabelInterpreter', 'tex');
+    hold off;
+end
+export_fig './figures/all/5B.jpg' -r500 -transparent
+
+end
+
+function p = chi_square_test_for_group_difference(ctable)
+%CHI_SQUARE_TEST_FOR_GOUP_DIFFERENCE Perform chi-square test to determine
+%if there is any difference of distribution among groups.
+% Input:
+%   ctable - the contigency table where each row corresponds to a group,
+%       each column corresponds to a category. The cell of this table is the
+%       number of occurrence of that category belonging to the group.
+% Output:
+%   p - p value
+
+[r,c] = size(ctable);
+
+N = sum(sum(ctable));
+
+p_category = sum(ctable, 1) / N;
+p_group = sum(ctable, 2) / N;
+
+p_cell = p_group * p_category;
+
+E = N * p_cell;
+O = ctable;
+
+if min(E(:)) < 5
+    warning('The minimum expected frequency is less than 5');
+end
+
+chi2stat = sum(sum((E - O).^2 ./ E));
+
+df = (r-1)*(c-1);
+
+p = 1 - chi2cdf(chi2stat, df);
+
+
+end
+
+function rmse = cal_rmse(y1,y2)
+
+y1 = y1 / sum(y1,'all');
+
+y2 = y2 / sum(y2,'all');
+
+squaredErrors = (y1 - y2).^2;
+
+mse = mean(squaredErrors);
+
+rmse = sqrt(mse);
+
+end
+
+
+function [x_max, y_max, x_min, y_min] = get_errorbars_maximum(handles)
+% GET_ERRORBARS_MAXIMUM Returns maximum extent of errorbar handles only
+
+x_max = -inf;
+y_max = -inf;
+x_min = inf;
+y_min = inf;
+
+for i = 1:length(handles)
+    h = handles(i);
+
+    if strcmp(h.Type, 'errorbar')
+        % Main data points
+        x_data = h.XData;
+        y_data = h.YData;
+
+        % Error bar extents
+        y_bottom = y_data - h.YNegativeDelta;
+        y_top = y_data + h.YPositiveDelta;
+
+        % Update extents
+        x_min = min(x_min, min(x_data));
+        x_max = max(x_max, max(x_data));
+        y_min = min(y_min, min(y_bottom));
+        y_max = max(y_max, max(y_top));
+    end
+end
+
+if isinf(x_min)
+    x_min = NaN;
+    x_max = NaN;
+    y_min = NaN;
+    y_max = NaN;
+end
+end

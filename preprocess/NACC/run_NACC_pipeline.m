@@ -228,6 +228,10 @@ data.Properties.VariableNames = curr_col_names;
 
 data = sortrows(data, {'RID','years'});
 
+if  ~exist('./Result/', 'dir')
+    mkdir('./Result/');
+end
+
 writetable(data, ['./Result/NACC_',biomarker_ver,'_z.csv']);
 
 end

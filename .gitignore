@@ -132,9 +132,11 @@ FTR_code/core/obsolete
 
 analysis/*
 
-!analysis/figures
-!analysis/graphics
-!analysis/utils
+
+!analysis/figures/
+!analysis/graphics/
+!analysis/utils/
+
 
 !analysis/compare_methods/
 analysis/compare_methods/*
@@ -149,7 +151,7 @@ analysis/compare_subtypes/*
 # Misc
 # =========================
 
-figures/
+/figures/
 competing_methods/
 gpml/
 obsolete/

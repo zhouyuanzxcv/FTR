@@ -1,12 +1,12 @@
-The code is in Matlab. First, install Matlab and open it. Then, change the current directory of Matlab to 'FTR', i.e., the folder containing the code ('run_algo.m' and all the subdirectories.)
+The code is in Matlab. First, install Matlab and open it. Then, change the current directory of Matlab to 'FTR-main', i.e., the folder containing the code ('run_algo.m' and all the subdirectories.)
 
 # 1. Preprocessing
 
-First, download the data files from ADNI/OASIS/NACC into specific folders. Then, change the current directory to the specific directory (ADNI/OASIS/NACC) under './preprocess' and run the pipeline code. The details for each cohort is given below.
+First, download the data files from ADNI/OASIS/NACC into specific 'data' folders. Then, change the current directory to the specific directory (ADNI/OASIS/NACC) under './preprocess' and run the pipeline code. The details for each cohort is given below.
 
 ## 1.1. ADNI
 
-To generate preprocessed ADNI data, first download the following data files into './preprocess/ADNI/data' from [ADNI](https://ida.loni.usc.edu/).
+To generate preprocessed ADNI data, first create a 'data' subfolder under './preprocess/ADNI' and download the following data files into './preprocess/ADNI/data' from [ADNI](https://ida.loni.usc.edu/).
 
 *UCSFFSX6_08_17_22_16Aug2023.csv*  
 *UCSFFSX51_11_08_19_16Aug2023.csv*  
@@ -15,7 +15,7 @@ To generate preprocessed ADNI data, first download the following data files into
 *ADNIMERGE_16Aug2023.csv*  
 *UPENNBIOMK_MASTER_FINAL_04Oct2023.csv*  
 
-Then, change the current directory to 'FTR/preprocess/ADNI' (e.g. `cd ./preprocess/ADNI`).
+Then, change the current directory to './preprocess/ADNI' (e.g. `cd ./preprocess/ADNI`).
 
 Finally, execute
 
@@ -23,11 +23,11 @@ Finally, execute
 run_ADNI_pipeline;
 ```
 
-The resulting preprocessed files will be saved in 'FTR/input/ADNI'.
+The resulting preprocessed files will be saved in 'FTR-main/input/ADNI'.
 
 ## 1.2. OASIS
 
-To generate preprocessed OASIS data, first download the following data files into './preprocess/OASIS/data' from [OASIS]([OASIS Brains](https://sites.wustl.edu/oasisbrains/home/oasis-3/)).
+To generate preprocessed OASIS data, first create a 'data' subfolder under './preprocess/OASIS' and download the following data files into './preprocess/OASIS/data' from [OASIS]([OASIS Brains](https://sites.wustl.edu/oasisbrains/home/oasis-3/)).
 
 *OASIS3_amyloid_centiloid.csv*  
 *OASIS3_demographics.csv*  
@@ -35,7 +35,7 @@ To generate preprocessed OASIS data, first download the following data files int
 *OASIS3_UDSa1_participant_demo.csv*  
 *OASIS3_UDSb4_cdr.csv*  
 
-Then, change the current directory to 'FTR/preprocess/OASIS'.
+Then, change the current directory to './preprocess/OASIS'.
 
 Finally, execute 
 
@@ -43,17 +43,17 @@ Finally, execute
 run_OASIS_pipeline;
 ```
 
-The resulting preprocessed files will be saved in 'FTR/input/OASIS3'.
+The resulting preprocessed files will be saved in 'FTR-main/input/OASIS3'.
 
 ## 1.3. NACC
 
-To generate preprocessed NACC data, first download the following data files into './preprocess/NACC/data' from [NACC (SCAN)](https://naccdata.org/data-collection/forms-documentation/biomarker-imaging#researchers%20data%20dictionary%20%20scan%20mri).
+To generate preprocessed NACC data, first create a 'data' subfolder under './preprocess/NACC' and download the following data files into './preprocess/NACC/data' from [NACC (SCAN)](https://naccdata.org/data-collection/forms-documentation/biomarker-imaging#researchers%20data%20dictionary%20%20scan%20mri).
 
 *investigator_ftldlbd_nacc69.csv*  
 *UCBERKELEY_AMYLOID_MRIFREE_GAAIN_04Apr2025.csv*  
 *UCDMRISBM_04Apr2025.csv*  
 
-Then, change the current directory to 'FTR/preprocess/NACC'.
+Then, change the current directory to './preprocess/NACC'.
 
 Finally, execute
 
@@ -61,11 +61,11 @@ Finally, execute
 run_NACC_pipeline;
 ```
 
-The resulting preprocessed files will be saved in 'FTR/input/NACC'.
+The resulting preprocessed files will be saved in 'FTR-main/input/NACC'.
 
 # 2. Run the algorithm or show the results
 
-Once the data are preprocessed, we can run the algorithm on them or analyze the results. Note that the trajectory and subtype/stage results have been saved. Hence, these results can be directly visualized by loading the preprocess datasets. 
+Once the data are preprocessed, we can run the algorithm on them or analyze the results. Note that the trajectory and subtype/stage results have been saved. Hence, these results can be directly visualized by loading the preprocessed datasets. 
 
 To either run the algorithm or visualize the results, we need to first change the current directory to 'FTR', and then add the following paths in the command window.
 
@@ -73,7 +73,6 @@ To either run the algorithm or visualize the results, we need to first change th
 addpath(genpath("FTR_code/"));
 addpath(genpath("utils/"));
 addpath(genpath('analysis'));
-addpath('figures');
 ```
 
 ## 2.1. Show the results

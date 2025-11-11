@@ -1,0 +1,157 @@
+function [outputArg1,outputArg2] = analyze_longitudinal_stability_3D(rerun_flag)
+if nargin < 1
+    rerun_flag = 0;
+end
+
+close all
+
+dataset_names = {'ADNI_FSX_HS'};
+% dataset_names = {'ADNI_FSX_LM', 'ADNI_FSX_LS'};
+
+% method_names = {'sustain'}; % 'FTR_kmeans','FTR_MCEM'
+method_names = {'FTR_MCEM'};
+
+nsubtype_list = [3];
+
+data_sel = 1;
+validate = 0;
+
+data_splits = {'last_point','baseline'};
+% data_splits = {'last_point'};
+
+save_path = ['./output/longitudinal_stability'];
+
+% if rerun all the algorithms, then need to remove the entire folder
+if rerun_flag && exist(save_path, 'dir')
+    disp('Remove FTR results and rerun FTR on all the data.');
+    delete([save_path, '/confusion_matrix/*_FTR_*.csv']);
+end
+
+
+[confusion_matrices, percentage_consistency, time_costs, kept_switched_PTIDs] = ...
+        run_algorithms_for_longitudinal_stability(...
+        dataset_names, method_names, nsubtype_list, data_splits, save_path, validate);
+
+f = figure;
+
+if data_sel == 1
+    f.Position = get_figure_position();
+elseif data_sel == 2 || data_sel == 3
+    f.Position = get_figure_position(7);
+end
+
+% t = tiledlayout(1,2, 'TileSpacing','compact', 'Padding','compact');
+% t.RowHeight = {'3x','1x'};
+
+for idx = 1:2
+    example_cm = confusion_matrices{idx, data_sel, 1, 1}; %baseline, ADNI_FSX_HS, FTR_MCEM, 3 subtypes
+    subplot(1,2,idx);
+    show_confusion_matrix(example_cm);
+    hold on;
+    if idx == 1
+        ylabel('Visit 1 to T-1')
+        xlabel('Visit T')
+    elseif idx == 2
+        ylabel('Visit 1')
+        xlabel('Visit 2 to T')
+    end
+
+end
+
+figure(f);
+if data_sel == 1
+    if validate == 0
+        export_fig './figures/all/3D.jpg' -r500 -transparent
+    else
+        export_fig './figures/all/3D1.jpg' -r500 -transparent
+    end
+elseif data_sel == 2
+    export_fig(sprintf('./figures/all/4E_OASIS_%d.jpg', validate), '-r500', '-transparent');
+elseif data_sel == 3
+    export_fig(sprintf('./figures/all/4E_NACC_%d.jpg', validate), '-r500', '-transparent');
+end
+
+cmap = get_colormap_sky();
+colors = cmap([255,32],:);
+f1 = figure;
+f1.Position = get_figure_position(8);
+for idx = 1:2
+    subplot(2,2,idx+2);
+    kept_switched = kept_switched_PTIDs{idx, data_sel, 1, 1};
+    ind1 = find(kept_switched.groups == 1);
+    ind2 = find(kept_switched.groups == 2);
+
+    ranks = tiedrank(kept_switched.train_probs);
+    
+    hold on;
+    bc1 = boxchart(ones(length(ind1), 1), ranks(ind1), ...
+        'boxfacecolor', colors(1,:), 'boxfacealpha', 0.8);
+    bc2 = boxchart(ones(length(ind2), 1)*2, ranks(ind2), ...
+        'boxfacecolor', colors(2,:), 'boxfacealpha', 0.8);
+    xlim([0.5,2.5]);
+    ylim([0,length(kept_switched.train_probs)+1]);
+
+    view([90 -90]);
+
+end
+legend([bc1,bc2], {'Subtype maintained','Subtype switched'}, 'location', 'north', ...
+    'Orientation','horizontal');
+
+if data_sel == 1
+    if validate == 0
+        export_fig(['./figures/all/3D_kept_switched'], '-r500', '-transparent');
+    else
+        export_fig(['./figures/all/3D1_kept_switched'], '-r500', '-transparent');
+    end
+end
+
+end
+
+
+function [outputArg1,outputArg2] = show_confusion_matrix(conf_matrix)
+%SHOW_CONFUSION_MAT Summary of this function goes here
+%   Detailed explanation goes here
+ % Display confusion matrix
+disp('Confusion Matrix:');
+disp(conf_matrix);
+
+perc_consistency = sum(diag(conf_matrix)) / sum(sum(conf_matrix));
+
+% Example subtypes 
+num_subtypes = size(conf_matrix, 1);
+train_subtypes = {'S1', 'S2', 'S3'};
+test_subtypes = {'S1', 'S2', 'S3'};
+
+% Plotting the confusion matrix
+% colormap sky
+colormap(get_colormap_sky());
+imagesc(conf_matrix);
+axis equal;
+ylim([0.5 3.5])
+
+% Adjusting axis labels and ticks
+set(gca, 'XTick', 1:length(train_subtypes), 'XTickLabel', train_subtypes, 'YTick', 1:length(test_subtypes), 'YTickLabel', test_subtypes);
+xlabel('Test Subtypes');
+ylabel('Train Subtypes');
+title({['Consistency: ',num2str(perc_consistency*100,3),'%']});
+
+% Displaying values in the cells (optional)
+textStrings = num2str(conf_matrix(:), '%d');
+textStrings = strtrim(cellstr(textStrings));
+[x, y] = meshgrid(1:length(train_subtypes), 1:length(test_subtypes));
+hStrings = text(x(:), y(:), textStrings(:), 'HorizontalAlignment', 'center');
+midValue = mean(get(gca, 'CLim'));
+% textColors = repmat(reshape(eye(num_subtypes),[],1), 1, 3);
+% %repmat(conf_matrix(:) > midValue, 1, 3);
+% set(hStrings, {'Color'}, num2cell(~textColors,2));
+
+% Adjusting the color scale (optional)
+% colormap('gray'); % Change the colormap as needed
+
+
+
+end
+
+
+
+

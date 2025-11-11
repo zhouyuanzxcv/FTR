@@ -1,0 +1,100 @@
+function [elapsed_ts1,sim_mats1] = compare_method_time(inputArg1,inputArg2)
+%COMPARE_METHOD_TIME Summary of this function goes here
+%   Detailed explanation goes here
+close all
+
+
+num_of_region = {'13','26','41','82'};
+data = {'ADNI_FSX_LM', 'ADNI_FSX_LS','ADNI_FSX_HM', 'ADNI_FSX_HS'; ...
+    %'ADNI_FSX_LM_DS', 'ADNI_FSX_LS_DS','ADNI_FSX_HM_DS', 'ADNI_FSX_HS_DS'; ...
+    'OASIS3_ROD1_LM', 'OASIS3_ROD1_LS','OASIS3_ROD1_HM', 'OASIS3_ROD1_HS'; ...
+    'NACC_LM', 'NACC_LS', 'NACC_HM', 'NACC_HS'};
+
+method = {'FTR_MCEM','sustain'};
+
+% nsubtype = 3;
+
+% ts_means = [];
+% ts_stds = [];
+
+
+% for idx_dataset = 1:size(data,1)
+%     for idx2 = 1:size(data,2)
+%         data_name = data{idx_dataset, idx2};
+%         for idx_method = 1:length(method)
+%             ts = [];
+%             for idx_run = 1:5
+%                 result_file = ['output/',data_name,'_',method{idx_method},'/',...
+%                     num2str(nsubtype),'_subtypes_run',num2str(idx_run),'/elapsed_t.csv'];
+%                 if exist(result_file, 'file')
+%                     elapsed_t = readmatrix(result_file);
+%                 else
+%                     elapsed_t = nan;
+%                 end
+%                 ts(idx_run) = elapsed_t;
+%             end
+%             ts_means(idx_method, idx2, idx_dataset) = mean(ts);
+%             ts_stds(idx_method, idx2, idx_dataset) = std(ts);
+%         end
+%     end
+% end
+
+if 1
+[elapsed_ts, sim_mats] = get_time_stability(data(:), method);
+
+elapsed_ts1 = reshape(elapsed_ts', [size(data,1)*length(method), size(data,2)]);
+sim_mats1 = reshape(sim_mats', [size(data,1)*length(method), size(data,2)]);
+
+% global elapsed_ts1
+% global sim_mats1
+end
+% ts_means = [];
+% ts_stds = [];
+
+stats_table = create_stats_table(data, method, num_of_region, 'runtime', elapsed_ts1, 'mean-std');
+disp(stats_table);
+
+% disp('elapsed time means (row: methods, column: # of regions, page: dataset)')
+% disp(ts_means)
+% 
+% disp('elapsed time stds (row: methods, column: # of regions, page: dataset)')
+% disp(ts_stds)
+
+function stats_table = create_stats_table(data_names, method_names, num_of_region, ...
+    data_type, elapsed_ts1, mode)
+stats_all = cell(1, size(data_names,2));
+
+column_names = num_of_region;
+
+row_names = {};
+for i = 1:size(elapsed_ts1, 1)
+    for j = 1:size(elapsed_ts1, 2)
+        row_name = sprintf('%s_%s_%s', data_type, data_names{round(i/2),1}(1:end-3), ...
+                    method_names{mod(i+1,2)+1});
+
+        if strcmp(mode, 'mean-std')
+            stats_all{j}(end+1,:) = mean(elapsed_ts1{i,j});        
+            stats_all{j}(end+1,:) = std(elapsed_ts1{i,j});
+            
+            if j == 1
+                row_name1 = [row_name, '_mean'];
+                row_names{end+1} = row_name1;
+                row_name1 = [row_name, '_std'];
+                row_names{end+1} = row_name1;
+            end
+        elseif strcmp(mode, 'median-IQR')
+            stats_all{j}(end+1,:) = median(elapsed_ts1{i,j});
+            stats_all{j}(end+1,:) = prctile(elapsed_ts1{i,j}, 25);
+            stats_all{j}(end+1,:) = prctile(elapsed_ts1{i,j}, 75);
+
+            if j == 1
+                row_name1 = [row_name, '_median'];
+                row_names{end+1} = row_name1;
+                row_name1 = [row_name, '_Q1'];
+                row_names{end+1} = row_name1;
+            end
+        end
+    end
+end
+
+stats_table = table(stats_all{:}, 'rownames', row_names, 'VariableNames', column_names);

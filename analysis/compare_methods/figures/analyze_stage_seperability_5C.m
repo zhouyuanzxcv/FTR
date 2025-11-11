@@ -1,0 +1,185 @@
+function [outputArg1,outputArg2] = analyze_stages(inputArg1,inputArg2)
+%ANALYZE_STAGES Summary of this function goes here
+%   Detailed explanation goes here
+
+close all
+
+
+data_names = {'ADNI_FSX_LM', 'ADNI_FSX_LS','ADNI_FSX_HM', 'ADNI_FSX_HS';
+    'OASIS3_ROD1_LM', 'OASIS3_ROD1_LS','OASIS3_ROD1_HM', 'OASIS3_ROD1_HS';
+    'NACC_LM', 'NACC_LS', 'NACC_HM', 'NACC_HS'};
+
+
+
+method = {'FTR_MCEM','sustain','debm','ebm'};
+method_colors = {[0 0.4470 0.7410], [0.8500 0.3250 0.0980],...
+    [0.4660 0.6740 0.1880],[0.3010 0.7450 0.9330]};
+method_shapes = {'o','square','^','>'};
+%method_labels = {'FTR (MCEM)','SuStaIn','DEBM','EBM'};
+
+   
+num_runs = 5;
+
+
+num_of_region = {'13','26','41','82'};
+num_of_region = repmat(num_of_region, 2, 1);
+num_of_region(3,:) = {'7','14','32','64'};
+
+nsubtype = 3;
+
+% include_control = 1;
+f = figure();
+f.Position = get_figure_position('fig51');
+
+for idx_dataset = 1:size(data_names,1)
+    subplot(size(data_names,1), 1, idx_dataset);
+    hold on;
+
+    handles = [];
+
+    b_spacing_multiplier = 20;
+    c_spacing_multiplier = 170;
+
+    for include_control = [1, 20]
+        %results = load_data_result(data_names(idx_dataset,:), method, nsubtype, include_control, 1);    
+
+        results = cell(size(data_names,2), length(method), num_runs);
+        for idx_run = 1:num_runs
+
+            options = [];
+            options.postfix = ['_run',num2str(idx_run)];
+    
+            tmp = load_data_result(data_names(idx_dataset,:), method, nsubtype, ...
+                include_control, options);
+
+            results(:,:,idx_run) = tmp;
+        end
+        
+        nboot = 0;
+    
+        plot_handles = [];
+        x_ticks = [];
+        for dataIdx = 1:size(data_names,2)
+            for methodIdx = 1:length(method)
+                ftr_or_sustain = strcmp(method{methodIdx}, 'FTR_MCEM') || ...
+                        strcmp(method{methodIdx}, 'sustain');
+
+                % only run FTR, sustain on the validation set
+                if include_control == 20 && ~any(strcmp(method{methodIdx}, ...
+                        {'FTR_MCEM','sustain','hippocampus volume'}))
+                        
+                    continue;
+                end
+
+                if ftr_or_sustain % if ftr or sustain, use 5 runs
+                    num_runs1 = num_runs;
+                else % if not ftr or sustain, only 1 run is executed
+                    num_runs1 = 1;
+                end
+
+                x_value = (dataIdx-1)*c_spacing_multiplier + (methodIdx-1)*b_spacing_multiplier;
+
+                y_values = nan(3, num_runs1);
+
+                for idx_run = 1:num_runs1
+                    result_run = results{dataIdx, methodIdx, idx_run};
+                    if isempty(result_run) && ~strcmp(method{methodIdx},'SVM') && ...
+                            ~strcmp(method{methodIdx},'hippocampus volume')
+                        AUC = NaN;
+                    else
+                        switch method{methodIdx}
+                            case {'SVM'}
+                                joindata = result_run.joindata;
+                                biomarker_names = results{dataIdx, 1}.biomarker_names;
+                                X = joindata{joindata.diagnosis~=0.5,biomarker_names};
+                                true_label = joindata.diagnosis(joindata.diagnosis~=0.5);
+                                AUCs = stage_svm(X, true_label);
+                                for i = 1:length(AUCs)                         
+                                    y_value = AUCs(i);
+                                    y_values(i, idx_run) = y_value;
+                                end
+                            case {'hippocampus volume'}
+                                joindata = result_run.joindata;
+                                stage = -joindata.HV;
+                                data = joindata;
+                                data = removevars(data, 'stage');
+                                data = addvars(data, stage);
+                                %% calculate AUC
+                                AUCs = calc_AUCs(data, nboot);
+                                close(gcf);
+    
+                                y_value = AUCs;
+                                y_values(:,idx_run) = y_value;
+                                
+                            otherwise
+                                joindata = result_run.joindata;
+                                joindata.Properties.VariableNames = strrep(joindata.Properties.VariableNames, '-', '_');
+        %                         stage = joindata.stage;
+                                data = joindata;
+                                %% calculate AUC
+                                AUCs = calc_AUCs(data, nboot);
+                                close(gcf);
+    
+                                y_values(:,idx_run) = AUCs;
+                                
+                        end
+
+                        
+                    end
+                end
+
+                for idx_point = 1:size(y_values,1)
+                    y_value_m = mean(y_values(idx_point, :), 'omitnan');
+                    y_value_std = std(y_values(idx_point, :), 'omitnan');
+
+                    if include_control == 1
+                        facecolor = method_colors{methodIdx};
+                    elseif include_control == 20
+                        facecolor = 'none';
+                    end
+                    
+%                         h = plot(x_value, y_value(j,1), method_shapes{methodIdx}, ...
+%                             'Color', method_colors{methodIdx}, 'MarkerFaceColor', ...
+%                             facecolor,'MarkerEdgeColor',method_colors{methodIdx}, ...
+%                             'MarkerSize', 6, 'linewidth', 1);
+                    h = errorbar(x_value, y_value_m, y_value_std, ...
+                        method_shapes{methodIdx}, ...
+                        "MarkerSize",5,...
+                        'linewidth', 1, 'color', method_colors{methodIdx}, ...
+                        "MarkerEdgeColor", method_colors{methodIdx}, ...
+                        "MarkerFaceColor", facecolor, ...
+                        'CapSize',0);
+                    handles = [handles, h];
+                
+                    if dataIdx == 1
+                        plot_handles = [plot_handles, h];
+                    end
+                end
+            end
+            x_ticks = [x_ticks, (dataIdx-1)*c_spacing_multiplier + (length(method)-1)*b_spacing_multiplier / 2];
+        end
+        % x_ticks = [- c_spacing_multiplier + (length(method)-1)*b_spacing_multiplier / 2, x_ticks];
+        set(gca, 'xtick', x_ticks, 'xticklabel', num_of_region(idx_dataset,:));
+        set(gca, 'TickLabelInterpreter', 'none');
+        xlabel('Number of regions')
+        xlim([-40, 620])
+    %     if idx_dataset == 1
+        ylabel('AUC');
+    %     end
+        % title(data_title(p))
+        % hLine = yline(-log10(0.05), '--');
+        % set(get(get(hLine, 'Annotation'), 'LegendInformation'), 'IconDisplayStyle', 'off');
+        % xlim([-40-c_spacing_multiplier (size(data,2)-1)*c_spacing_multiplier + (length(method)-1)*b_spacing_multiplier + 40])
+        % ylim([0 6.05])
+        % set(gca, 'ytick',[0 1 2 3 4 5 6], 'yticklabel', {'0','1','2','3','4','5','\geq 6'});
+        % set(gca, 'TickLabelInterpreter', 'tex');
+    end
+
+    handles = jitter_overlap(handles, b_spacing_multiplier, [0.1, 0.02]);
+
+    hold off;
+end
+
+% legend(plot_handles, method_labels, 'Location', 'westoutside', 'Interpreter', 'none');
+export_fig './figures/all/5C.jpg' -r500 -transparent
+end
