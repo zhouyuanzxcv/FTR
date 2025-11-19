@@ -27,13 +27,18 @@ save_path = ['longitudinal_stability'];
 
 %% plot using heatmaps
 
-if 1
+if ~exist('tmp/tmp_ys_all.mat', 'file')
 %     load('tmp_ys_all.mat');
-    [metrics, ys_all, validate] = retrieve_longitudinal_stability(dataset_names, ...
+    [metrics, ys_all, validates, num_subjs_all] = retrieve_longitudinal_stability(dataset_names, ...
         method_names, nsubtype_list, data_splits, save_path, idx_subtype);
-    save('tmp_ys_all.mat', "ys_all");
+
+    if ~exist('tmp', 'dir')
+        mkdir('tmp');
+    end
+
+    save('tmp/tmp_ys_all.mat', 'ys_all', 'num_subjs_all');
 else
-    load('tmp_ys_all.mat');
+    load('tmp/tmp_ys_all.mat');
 end
 
 % ys((dataset-1)*2+method, dim, run, split, metric, validate)
@@ -62,7 +67,7 @@ end
 
 
 
-function [metrics, ys_all, validate] = retrieve_longitudinal_stability(dataset_names, ...
+function [metrics, ys_all, validates, num_subjs_all] = retrieve_longitudinal_stability(dataset_names, ...
     method_names, nsubtype_list, data_splits, save_path, idx_subtype, ys_all)
 
 metrics = {'consistency','ARI'};
@@ -78,8 +83,10 @@ if nargin < 7
         size(dataset_names, 2), num_runs, num_splits, length(metrics),2);
 end
 
+validates = [0,1];
+num_subjs_all = cell(2,2);
 
-for validate = [0,1]
+for validate = validates
     for idx_split = 1:num_splits
       
             num_subjs = [];
@@ -137,9 +144,13 @@ for validate = [0,1]
 
             end
 
+            num_subjs_all{validate+1, idx_split} = num_subjs;
+
     end
     
 end
+
+num_subjs_all = cell2mat(num_subjs_all);
 
 % ys_all = cell2mat(ys_all);
 end

@@ -12,7 +12,9 @@ method_names = {'FTR_MCEM'};
 nsubtype_list = [3];
 
 data_sel = 1;
-validate = 1;
+
+% 0 for discovery set and 1 for validation set
+validate = 0;
 
 data_splits = {'last_point','baseline'};
 % data_splits = {'last_point'};
@@ -56,6 +58,7 @@ for idx = 1:2
 
 end
 
+% if 0
 figure(f);
 if data_sel == 1
     if validate == 0
@@ -68,6 +71,7 @@ elseif data_sel == 2
 elseif data_sel == 3
     export_fig(sprintf('./figures/all/4E_NACC_%d.jpg', validate), '-r500', '-transparent');
 end
+% end
 
 cmap = get_colormap_sky();
 colors = cmap([255,32],:);
@@ -84,8 +88,12 @@ for idx = 1:2
     hold on;
     bc1 = boxchart(ones(length(ind1), 1), ranks(ind1), ...
         'boxfacecolor', colors(1,:), 'boxfacealpha', 0.9, 'notch', 'on');
+    % bc1.WhiskerLineColor = colors(1,:);
+    
     bc2 = boxchart(ones(length(ind2), 1)*2, ranks(ind2), ...
         'boxfacecolor', colors(2,:), 'boxfacealpha', 0.9, 'notch', 'on');
+    % bc2.WhiskerLineColor = colors(2,:);
+
     xlim([0.5,2.5]);
     ylim([0,length(kept_switched.train_probs)+1]);
     xticks([1,2]);

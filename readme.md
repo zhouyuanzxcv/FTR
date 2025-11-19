@@ -1,4 +1,4 @@
-The code is in Matlab. First, install Matlab and open it. Then, change the current directory of Matlab to 'FTR-main', i.e., the folder containing the code ('run_algo.m' and all the subdirectories.)
+This repository contains the code for a submitted paper for review. The code is in Matlab. First, install Matlab and open it. Then, change the current directory of Matlab to 'FTR-main', i.e., the folder containing the code ('run_algo.m' and all the subdirectories).
 
 # 1. Preprocessing
 
@@ -146,3 +146,7 @@ We can also run the algorithm to regenerate the trajectory and subtype/stage res
    ```
 
 The postfix 'HS' represents the dimensionality of the dataset. The postfixes can be 'HS', 'HM', 'LS', 'LM', which correspond to 82 (64), 41 (32), 26 (14), 13 (7) brain regions for ADNI/OASIS (NACC) respectively.
+
+# Contact
+
+For any questions, please contact Yuan Zhou at zhouyuanzxcv@gmail.com for information.

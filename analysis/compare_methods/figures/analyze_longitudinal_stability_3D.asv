@@ -6,20 +6,20 @@ end
 close all
 
 dataset_names = {'ADNI_FSX_HS'};
-% dataset_names = {'ADNI_FSX_LM', 'ADNI_FSX_LS'};
 
-% method_names = {'sustain'}; % 'FTR_kmeans','FTR_MCEM'
 method_names = {'FTR_MCEM'};
 
 nsubtype_list = [3];
 
 data_sel = 1;
+
+% 0 for discovery set and 1 for validation set
 validate = 0;
 
 data_splits = {'last_point','baseline'};
 % data_splits = {'last_point'};
 
-save_path = ['./output/longitudinal_stability'];
+save_path = ['longitudinal_stability'];
 
 % if rerun all the algorithms, then need to remove the entire folder
 if rerun_flag && exist(save_path, 'dir')
@@ -35,7 +35,7 @@ end
 f = figure;
 
 if data_sel == 1
-    f.Position = get_figure_position();
+    f.Position = get_figure_position(11);
 elseif data_sel == 2 || data_sel == 3
     f.Position = get_figure_position(7);
 end
@@ -58,6 +58,7 @@ for idx = 1:2
 
 end
 
+if 0
 figure(f);
 if data_sel == 1
     if validate == 0
@@ -69,6 +70,7 @@ elseif data_sel == 2
     export_fig(sprintf('./figures/all/4E_OASIS_%d.jpg', validate), '-r500', '-transparent');
 elseif data_sel == 3
     export_fig(sprintf('./figures/all/4E_NACC_%d.jpg', validate), '-r500', '-transparent');
+end
 end
 
 cmap = get_colormap_sky();
@@ -85,23 +87,31 @@ for idx = 1:2
     
     hold on;
     bc1 = boxchart(ones(length(ind1), 1), ranks(ind1), ...
-        'boxfacecolor', colors(1,:), 'boxfacealpha', 0.8);
+        'boxfacecolor', colors(1,:), 'boxfacealpha', 0.9, 'notch', 'on');
+        
+    bc1.WhiskerLineColor = colors(1,:);
+    
     bc2 = boxchart(ones(length(ind2), 1)*2, ranks(ind2), ...
-        'boxfacecolor', colors(2,:), 'boxfacealpha', 0.8);
+        'boxfacecolor', colors(2,:), 'boxfacealpha', 0.9, ...
+        'notch', 'on');
+    bc2.WhiskerLineColor = colors(2,:);
+
     xlim([0.5,2.5]);
     ylim([0,length(kept_switched.train_probs)+1]);
+    xticks([1,2]);
+    xticklabels({'Stayed','Switched'});
 
     view([90 -90]);
 
 end
-legend([bc1,bc2], {'Subtype maintained','Subtype switched'}, 'location', 'north', ...
-    'Orientation','horizontal');
+%legend([bc1,bc2], {'Subtype maintained','Subtype switched'}, 'location', 'north', ...
+%    'Orientation','horizontal');
 
 if data_sel == 1
     if validate == 0
-        export_fig(['./figures/all/3D_kept_switched'], '-r500', '-transparent');
+        export_fig(['./figures/all/3D_kept_switched.jpg'], '-r500', '-transparent');
     else
-        export_fig(['./figures/all/3D1_kept_switched'], '-r500', '-transparent');
+        export_fig(['./figures/all/3D1_kept_switched.jpg'], '-r500', '-transparent');
     end
 end
 

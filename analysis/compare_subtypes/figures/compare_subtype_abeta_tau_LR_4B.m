@@ -61,6 +61,11 @@ image_t.Properties.VariableNames = cellfun(@(x) strrep(x, '_', '-'), disp_cells(
 names = arrayfun(@(x) sprintf('Image%d', x), 1:3, 'UniformOutput', false);
 image_t = addvars(image_t, names', 'Before', 1, 'NewVariableNames',{ 'Image-name-unique' });
 
+
+if ~exist('analysis/brainpainting/input', 'dir')
+    mkdir('analysis/brainpainting/input');
+end
+
 writetable(image_t, ['analysis/brainpainting/input/4B_', data_names{data_sel}, '.csv']);
 
 

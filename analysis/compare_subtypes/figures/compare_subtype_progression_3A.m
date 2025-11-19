@@ -14,6 +14,7 @@ ref_group = 1;
 
 % 0 for discovery set, 2 for validation set
 include_control = 0;
+
 results = load_data_result(data, method, nsubtype, include_control, 1);
 joindata = results{data_sel,1}.joindata;
 mmse = results{data_sel,1}.mmse;
