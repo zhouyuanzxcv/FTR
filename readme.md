@@ -1,4 +1,4 @@
-This repository contains the code for a submitted paper for review. The code is in Matlab. First, install Matlab and open it. Then, change the current directory of Matlab to 'FTR-main', i.e., the folder containing the code ('run_algo.m' and all the subdirectories).
+This repository contains the code for a submitted paper for review. The code is in Matlab. The steps for reproducing the figures and results in the paper are given below. First, install Matlab and open it. Then, change the current directory of Matlab to 'FTR-main', i.e., the folder containing the code ('run_algo.m' and all the subdirectories).
 
 # 1. Preprocessing
 
@@ -67,7 +67,7 @@ The resulting preprocessed files will be saved in 'FTR-main/input/NACC'.
 
 Once the data are preprocessed, we can run the algorithm on them or analyze the results. Note that the trajectory and subtype/stage results have been saved. Hence, these results can be directly visualized by loading the preprocessed datasets. 
 
-To either run the algorithm or visualize the results, we need to first change the current directory to 'FTR', and then add the following paths in the command window.
+To either run the algorithm or visualize the results, we need to first change the current directory to 'FTR-main', and then add the following paths in the command window.
 
 ```
 addpath(genpath("FTR_code/"));
